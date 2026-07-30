@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Get version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $commit = "${{ github.sha }}".Substring(0, 7)
+          $date = Get-Date -Format "yyyy-MM-dd"
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "COMMIT=$commit" >> $env:GITHUB_OUTPUT
+          echo "DATE=$date" >> $env:GITHUB_OUTPUT
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $ldflags = "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ steps.version.outputs.COMMIT }} -X main.buildDate=${{ steps.version.outputs.DATE }}"
+          go build -ldflags $ldflags -o queue-watcher-windows-amd64.exe .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: queue-watcher-windows-amd64.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

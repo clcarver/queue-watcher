@@ -1,0 +1,20 @@
+# Binary
+queue-watcher.exe
+queue-watcher.exe.old
+
+# Config (contains credentials via .env key references)
+queue-watcher.json
+
+# Local data
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

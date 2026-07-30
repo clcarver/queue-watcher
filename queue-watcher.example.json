@@ -1,0 +1,35 @@
+{
+  "php_binary": "php",
+  "restart_delay": 2000000000,
+  "git_poll_interval": 10000000000,
+  "dashboard_addr": "0.0.0.0:9100",
+  "update": {
+    "enabled": true,
+    "repository": "clcarver/queue-watcher",
+    "check_interval": 3600000000000
+  },
+  "sites": [
+    {
+      "id": "my-app",
+      "name": "My Laravel App",
+      "laravel_path": "C:\\path\\to\\your\\laravel\\app",
+      "git_branch": "main",
+      "workers": [
+        {
+          "label": "Default Worker",
+          "queue_connection": "database",
+          "queue_names": "default",
+          "max_memory_mb": 128,
+          "timeout_seconds": 60,
+          "max_jobs": 0,
+          "tries": 3
+        }
+      ],
+      "db_host_env": "DB_HOST",
+      "db_port_env": "DB_PORT",
+      "db_database_env": "DB_DATABASE",
+      "db_username_env": "DB_USERNAME",
+      "db_password_env": "DB_PASSWORD"
+    }
+  ]
+}
