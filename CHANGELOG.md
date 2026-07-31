@@ -4,6 +4,11 @@ All notable changes to queue-watcher are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-31
+
+### Fixed
+- Sidebar layout now stays full-height (`h-full`/viewport height) and no longer scales with main-content scroll length.
+
 ## [0.2.1] - 2026-07-31
 
 ### Added
