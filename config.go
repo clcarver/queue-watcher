@@ -99,6 +99,13 @@ type Config struct {
 	// Auto-update settings.
 	Update *UpdateConfig `json:"update,omitempty"`
 
+	// Email notification settings.
+	Notify *NotifyConfig `json:"notify,omitempty"`
+
+	// Maximum number of job_events rows to retain per site (auto-prune).
+	// Older rows are deleted once this limit is exceeded. 0 = disabled.
+	MaxRetainedRecords int `json:"max_retained_records"`
+
 	// Registered Laravel sites.
 	Sites []*SiteConfig `json:"sites"`
 
@@ -117,6 +124,8 @@ func DefaultConfig() *Config {
 		GitPollInterval: 10 * time.Second,
 		DashboardAddr:   "127.0.0.1:9100",
 		Update:          DefaultUpdateConfig(),
+		Notify:          DefaultNotifyConfig(),
+		MaxRetainedRecords: 10000,
 		Sites:           []*SiteConfig{},
 	}
 }

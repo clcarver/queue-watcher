@@ -147,11 +147,11 @@ type LaravelDB struct {
 	prevJobs      map[int64]*trackedJob // Jobs seen in previous poll (by ID).
 	prevFailedMax int64                 // Highest failed_jobs.id seen.
 	OnCompletion  func(event JobEvent)  // Called when a completed/failed job is detected.
+	OnNewFailed   func(job *FailedJob)  // Called when a new failed job is detected via DB diff.
 }
 
 // NewLaravelDB connects to the Laravel database using the site's .env file.
 // The config fields (db_host_env, etc.) name keys inside the site's .env file.
-// Connection is opened in READ-ONLY mode (ApplicationIntent=ReadOnly).
 func NewLaravelDB(sc *SiteConfig) (*LaravelDB, error) {
 	env, err := ReadLaravelEnv(sc.LaravelPath)
 	if err != nil {
@@ -177,8 +177,6 @@ func NewLaravelDB(sc *SiteConfig) (*LaravelDB, error) {
 	query.Add("database", database)
 	query.Add("encrypt", "disable")
 	query.Add("app name", "queue-watcher")
-	// Force read-only intent to prevent accidental writes.
-	query.Add("ApplicationIntent", "ReadOnly")
 
 	u := &url.URL{
 		Scheme:   "sqlserver",
@@ -338,7 +336,17 @@ func (ldb *LaravelDB) PollMetrics() (*QueueMetrics, error) {
 
 	// Update previous state for next diff.
 	ldb.prevJobs = currentJobs
+	prevFailedMax := ldb.prevFailedMax
 	if maxFailedID > ldb.prevFailedMax {
+		// Fire OnNewFailed for each genuinely new failed job.
+		if ldb.OnNewFailed != nil {
+			for _, j := range failedJobs {
+				if j.ID > prevFailedMax {
+					jCopy := j
+					ldb.OnNewFailed(&jCopy)
+				}
+			}
+		}
 		ldb.prevFailedMax = maxFailedID
 	}
 
@@ -558,6 +566,39 @@ func (ms *MetricsStore) RecordThroughputSnapshot(siteID string, pending, reserve
 	}
 }
 
+// GetPagedEvents returns a page of job events for a site, most recent first.
+// Returns the events and the total count of events for pagination.
+func (ms *MetricsStore) GetPagedEvents(siteID string, limit, offset int) ([]JobEvent, int) {
+	var total int
+	ms.db.QueryRow(`SELECT COUNT(*) FROM job_events WHERE site_id = ?`, siteID).Scan(&total)
+
+	rows, err := ms.db.Query(
+		`SELECT job_name, job_id, queue, worker_id, status, timestamp, wait_ms, duration_ms
+		 FROM job_events WHERE site_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+		siteID, limit, offset,
+	)
+	if err != nil {
+		log.Printf("[metrics] Failed to query events: %v", err)
+		return nil, total
+	}
+	defer rows.Close()
+
+	var events []JobEvent
+	for rows.Next() {
+		var e JobEvent
+		var ts string
+		if err := rows.Scan(&e.JobName, &e.JobID, &e.Queue, &e.WorkerID, &e.Status, &ts, &e.WaitMs, &e.DurationMs); err != nil {
+			continue
+		}
+		e.Timestamp, _ = time.Parse("2006-01-02 15:04:05", ts)
+		if e.Timestamp.IsZero() {
+			e.Timestamp, _ = time.Parse(time.RFC3339, ts)
+		}
+		events = append(events, e)
+	}
+	return events, total
+}
+
 // GetRecentEvents returns the most recent job events for a site.
 func (ms *MetricsStore) GetRecentEvents(siteID string, limit int) []JobEvent {
 	rows, err := ms.db.Query(
@@ -669,6 +710,73 @@ func (ms *MetricsStore) GetThroughputHistory(siteID string, since time.Duration,
 		})
 	}
 	return results
+}
+
+// PruneByCount removes the oldest job_events rows, keeping at most maxRows per site.
+// Call periodically to enforce a record-count limit rather than a time-based limit.
+func (ms *MetricsStore) PruneByCount(siteID string, maxRows int) {
+	if maxRows <= 0 {
+		return
+	}
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	ms.db.Exec(
+		`DELETE FROM job_events WHERE site_id = ? AND id NOT IN (
+			SELECT id FROM job_events WHERE site_id = ? ORDER BY id DESC LIMIT ?
+		)`,
+		siteID, siteID, maxRows,
+	)
+}
+
+// GetFailedJobDetail returns a single failed job by ID, including the full exception.
+func (ldb *LaravelDB) GetFailedJobDetail(id int64) (*FailedJob, error) {
+	row := ldb.db.QueryRow(
+		`SELECT id, ISNULL(uuid, ''), connection, queue, payload, exception, failed_at
+		 FROM failed_jobs WHERE id = ?`, id)
+
+	var j FailedJob
+	var payload string
+	if err := row.Scan(&j.ID, &j.UUID, &j.Connection, &j.Queue, &payload, &j.Exception, &j.FailedAt); err != nil {
+		return nil, err
+	}
+	j.JobName = extractJobName(payload)
+	return &j, nil
+}
+
+// DeleteFailedJob deletes a row from the failed_jobs table.
+func (ldb *LaravelDB) DeleteFailedJob(uuid string) error {
+	_, err := ldb.db.Exec(`DELETE FROM failed_jobs WHERE uuid = ?`, uuid)
+	return err
+}
+
+// RetryFailedJob moves a failed job back to the jobs table (same as artisan queue:retry).
+// It reads the payload from failed_jobs, inserts into jobs, then deletes from failed_jobs.
+func (ldb *LaravelDB) RetryFailedJob(uuid string) error {
+	// Read the failed job.
+	row := ldb.db.QueryRow(
+		`SELECT id, queue, payload FROM failed_jobs WHERE uuid = ?`, uuid)
+	var id int64
+	var queue, payload string
+	if err := row.Scan(&id, &queue, &payload); err != nil {
+		return fmt.Errorf("failed job %q not found: %w", uuid, err)
+	}
+
+	now := time.Now().Unix()
+
+	// Insert back into jobs table.
+	_, err := ldb.db.Exec(
+		`INSERT INTO jobs (queue, payload, attempts, reserved_at, available_at, created_at)
+		 VALUES (?, ?, 0, NULL, ?, ?)`,
+		queue, payload, now, now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to re-queue job: %w", err)
+	}
+
+	// Remove from failed_jobs.
+	_, err = ldb.db.Exec(`DELETE FROM failed_jobs WHERE id = ?`, id)
+	return err
 }
 
 // PruneOldData removes records older than the retention period.

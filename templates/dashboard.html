@@ -3,1539 +3,1253 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Laravel Queue Watcher — Dashboard</title>
+    <title>Queue Watcher</title>
     <style>
         :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-card: #334155;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent-green: #22c55e;
-            --accent-red: #ef4444;
-            --accent-blue: #3b82f6;
-            --accent-amber: #f59e0b;
-            --accent-purple: #a855f7;
-            --border: #475569;
-            --radius: 8px;
+            --bg: #0d1117;
+            --bg-panel: #161b22;
+            --bg-card: #21262d;
+            --bg-hover: #30363d;
+            --border: #30363d;
+            --border-muted: #21262d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --text-subtle: #6e7681;
+            --green: #3fb950;
+            --red: #f85149;
+            --amber: #d29922;
+            --blue: #388bfd;
+            --purple: #bc8cff;
+            --cyan: #39d353;
+            --radius: 6px;
+            --sidebar-w: 260px;
+            --tab-h: 44px;
         }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
-            min-height: 100vh;
-            display: flex;
-        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; font-size:14px; line-height:1.5; }
 
         /* ── Sidebar ── */
-        .sidebar {
-            width: 280px;
-            min-height: 100vh;
-            background: var(--bg-secondary);
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-        }
-
-        .sidebar-header {
-            padding: 1.25rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .sidebar-header h1 {
-            font-size: 1.1rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .sidebar-header .sub {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            margin-top: 0.25rem;
-        }
-
-        .site-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0.5rem;
-        }
-
-        .site-item {
-            padding: 0.75rem;
-            border-radius: var(--radius);
-            cursor: pointer;
-            margin-bottom: 0.25rem;
-            transition: background 0.15s;
-            border: 1px solid transparent;
-        }
-
-        .site-item:hover { background: var(--bg-card); }
-
-        .site-item.active {
-            background: rgba(59, 130, 246, 0.15);
-            border-color: var(--accent-blue);
-        }
-
-        .site-item .site-name {
-            font-weight: 600;
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .site-item .site-path {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            word-break: break-all;
-            margin-top: 0.15rem;
-        }
-
-        .site-item .site-workers-badge {
-            font-size: 0.65rem;
-            background: rgba(34, 197, 94, 0.2);
-            color: var(--accent-green);
-            padding: 0.1rem 0.4rem;
-            border-radius: 10px;
-            font-weight: 600;
-        }
-
-        .sidebar-footer {
-            padding: 0.75rem;
-            border-top: 1px solid var(--border);
-        }
-
-        .btn-add-site {
-            width: 100%;
-            padding: 0.6rem;
-            background: var(--accent-blue);
-            color: #fff;
-            border: none;
-            border-radius: var(--radius);
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: filter 0.2s;
-        }
-
-        .btn-add-site:hover { filter: brightness(1.15); }
-
-        /* ── Main Content ── */
-        .main {
-            flex: 1;
-            overflow-y: auto;
-            max-height: 100vh;
-        }
-
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .empty-main {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .empty-main .icon { font-size: 3rem; }
-
-        /* ── Site Header ── */
-        .site-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .site-header h2 { font-size: 1.3rem; font-weight: 700; }
-
-        .site-header .remove-btn {
-            background: transparent;
-            border: 1px solid var(--accent-red);
-            color: var(--accent-red);
-            padding: 0.4rem 0.8rem;
-            border-radius: var(--radius);
-            font-size: 0.75rem;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-
-        .site-header .remove-btn:hover {
-            background: var(--accent-red);
-            color: #fff;
-        }
-
-        .info-bar {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 0.75rem 1rem;
-            margin-bottom: 1.5rem;
-            display: flex;
-            gap: 2rem;
-            flex-wrap: wrap;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-
-        .info-bar span { display: flex; align-items: center; gap: 0.3rem; }
-        .info-bar strong { color: var(--text-primary); }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .stat-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1rem;
-        }
-
-        .stat-card .label {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .stat-card .value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-top: 0.15rem;
-        }
-
-        .controls {
-            display: flex;
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: var(--radius);
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn:hover { transform: translateY(-1px); filter: brightness(1.1); }
-        .btn:active { transform: translateY(0); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .btn-green { background: var(--accent-green); color: #000; }
-        .btn-red { background: var(--accent-red); color: #fff; }
-        .btn-amber { background: var(--accent-amber); color: #000; }
-
-        .btn-small {
-            padding: 0.25rem 0.6rem;
-            font-size: 0.7rem;
-            border-radius: 4px;
-        }
-
-        .workers-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--bg-secondary);
-            border-radius: var(--radius);
-            overflow: hidden;
-            border: 1px solid var(--border);
-        }
-
-        .workers-table th {
-            background: var(--bg-card);
-            padding: 0.6rem 0.75rem;
-            text-align: left;
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-secondary);
-            font-weight: 600;
-        }
-
-        .workers-table td {
-            padding: 0.6rem 0.75rem;
-            border-top: 1px solid var(--border);
-            font-size: 0.85rem;
-        }
-
-        .workers-table tr:hover td {
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .worker-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.15rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: 600;
-        }
-
-        .worker-status.running {
-            background: rgba(34, 197, 94, 0.15);
-            color: var(--accent-green);
-        }
-
-        .worker-status.stopped {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--accent-red);
-        }
-
-        .worker-status.faulted {
-            background: rgba(168, 85, 247, 0.15);
-            color: var(--accent-purple);
-        }
-
-        .worker-status .dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: currentColor;
-        }
-
-        .fault-reason {
-            font-size: 0.7rem;
-            color: var(--accent-purple);
-            margin-top: 0.2rem;
-            max-width: 350px;
-            word-break: break-word;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 2rem;
-            color: var(--text-secondary);
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-
-        .running .dot { animation: pulse 2s infinite; }
-
-        /* ── Job History ── */
-        .job-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            padding: 0.1rem 0.5rem;
-            border-radius: 10px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .job-status.processed {
-            background: rgba(34, 197, 94, 0.15);
-            color: var(--accent-green);
-        }
-
-        .job-status.processing {
-            background: rgba(59, 130, 246, 0.15);
-            color: var(--accent-blue);
-        }
-
-        .job-status.failed {
-            background: rgba(239, 68, 68, 0.15);
-            color: var(--accent-red);
-        }
-
-        .jobs-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--bg-secondary);
-            border-radius: var(--radius);
-            overflow: hidden;
-            border: 1px solid var(--border);
-            font-size: 0.8rem;
-        }
-
-        .jobs-table th {
-            background: var(--bg-card);
-            padding: 0.5rem 0.75rem;
-            text-align: left;
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-secondary);
-            font-weight: 600;
-        }
-
-        .jobs-table td {
-            padding: 0.4rem 0.75rem;
-            border-top: 1px solid var(--border);
-        }
-
-        .jobs-table tr:hover td {
-            background: rgba(255,255,255,0.02);
-        }
-
-        .job-name {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 0.75rem;
-            color: var(--accent-amber);
-        }
-
-        /* ── Modal ── */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-overlay.show { display: flex; }
-
-        .modal {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 1.5rem;
-            width: 500px;
-            max-width: 90vw;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-        }
-
-        .modal h3 {
-            margin-bottom: 1rem;
-            font-size: 1.1rem;
-        }
-
-        .modal label {
-            display: block;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            margin-bottom: 0.25rem;
-            margin-top: 0.75rem;
-        }
-
-        .modal input, .modal select {
-            width: 100%;
-            padding: 0.5rem 0.75rem;
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            color: var(--text-primary);
-            font-size: 0.85rem;
-        }
-
-        .modal input:focus, .modal select:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-        }
-
-        .modal-actions {
-            display: flex;
-            gap: 0.75rem;
-            margin-top: 1.25rem;
-            justify-content: flex-end;
-        }
-
-        .modal-actions .btn-cancel {
-            background: var(--bg-card);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-            padding: 0.5rem 1rem;
-            border-radius: var(--radius);
-            cursor: pointer;
-            font-size: 0.85rem;
-        }
-
-        .validation-result {
-            margin-top: 0.5rem;
-            padding: 0.5rem 0.75rem;
-            border-radius: var(--radius);
-            font-size: 0.75rem;
-            display: none;
-        }
-
-        .validation-result.valid {
-            display: block;
-            background: rgba(34, 197, 94, 0.1);
-            border: 1px solid rgba(34, 197, 94, 0.3);
-            color: var(--accent-green);
-        }
-
-        .validation-result.invalid {
-            display: block;
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: var(--accent-red);
-        }
-
-        .toast {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 0.75rem 1.5rem;
-            font-size: 0.85rem;
-            color: var(--text-primary);
-            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
-            transform: translateY(100px);
-            opacity: 0;
-            transition: all 0.3s;
-            z-index: 200;
-        }
-
-        .toast.show { transform: translateY(0); opacity: 1; }
-
-        .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-
-        @media (max-width: 768px) {
-            body { flex-direction: column; }
-            .sidebar { width: 100%; min-height: auto; max-height: 40vh; }
-            .main { max-height: none; }
-            .stats-grid { grid-template-columns: 1fr 1fr; }
-            .row-2 { grid-template-columns: 1fr; }
+        .sidebar { width:var(--sidebar-w); min-height:100vh; background:var(--bg-panel); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; }
+        .sidebar-brand { padding:1rem; border-bottom:1px solid var(--border); }
+        .sidebar-brand h1 { font-size:1rem; font-weight:700; display:flex; align-items:center; gap:0.5rem; letter-spacing:-0.01em; }
+        .sidebar-brand .addr { font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem; }
+        .site-list { flex:1; overflow-y:auto; padding:0.5rem; }
+        .site-item { padding:0.6rem 0.75rem; border-radius:var(--radius); cursor:pointer; margin-bottom:2px; transition:background 0.1s; border:1px solid transparent; }
+        .site-item:hover { background:var(--bg-card); }
+        .site-item.active { background:rgba(56,139,253,0.1); border-color:rgba(56,139,253,0.4); }
+        .site-item .name { font-weight:600; font-size:0.85rem; display:flex; align-items:center; justify-content:space-between; }
+        .site-item .path { font-size:0.7rem; color:var(--text-muted); margin-top:0.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .worker-badge { font-size:0.65rem; background:rgba(63,185,80,0.15); color:var(--green); padding:0.1rem 0.45rem; border-radius:10px; font-weight:600; white-space:nowrap; }
+        .sidebar-footer { padding:0.75rem; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:0.4rem; }
+        .btn-sidebar { width:100%; padding:0.5rem; border:1px solid var(--border); background:transparent; color:var(--text-muted); border-radius:var(--radius); font-size:0.8rem; font-weight:600; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:0.4rem; }
+        .btn-sidebar:hover { background:var(--bg-card); color:var(--text); border-color:var(--blue); }
+        .btn-sidebar.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+        .btn-sidebar.primary:hover { filter:brightness(1.1); }
+        .version-chip { font-size:0.65rem; color:var(--text-subtle); text-align:center; }
+
+        /* ── Main ── */
+        .main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+        .empty-screen { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:1rem; color:var(--text-muted); }
+        .empty-screen .icon { font-size:3rem; }
+
+        /* ── Site top-bar ── */
+        .site-topbar { padding:1rem 1.5rem 0; border-bottom:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; }
+        .site-topbar-row { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:0.75rem; gap:1rem; }
+        .site-topbar h2 { font-size:1.1rem; font-weight:700; letter-spacing:-0.01em; }
+        .topbar-meta { display:flex; gap:1.25rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap; margin-bottom:0.5rem; }
+        .topbar-meta strong { color:var(--text); }
+        .topbar-actions { display:flex; gap:0.4rem; flex-shrink:0; }
+        .btn-ghost { padding:0.35rem 0.75rem; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:var(--radius); font-size:0.75rem; font-weight:600; cursor:pointer; transition:all 0.15s; }
+        .btn-ghost:hover { background:var(--bg-card); color:var(--text); }
+        .btn-ghost.danger:hover { border-color:var(--red); color:var(--red); }
+
+        /* ── Tabs ── */
+        .tabs { display:flex; gap:0; }
+        .tab { padding:0.6rem 1.1rem; font-size:0.85rem; font-weight:600; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; transition:all 0.15s; white-space:nowrap; display:flex; align-items:center; gap:0.4rem; }
+        .tab:hover { color:var(--text); }
+        .tab.active { color:var(--text); border-bottom-color:var(--blue); }
+        .tab-badge { font-size:0.65rem; background:var(--bg-card); border:1px solid var(--border); padding:0.05rem 0.4rem; border-radius:10px; font-weight:600; }
+        .tab.active .tab-badge { background:rgba(56,139,253,0.15); border-color:rgba(56,139,253,0.4); color:var(--blue); }
+
+        /* ── Tab Panels ── */
+        .tab-content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+        .tab-panel { display:none; flex:1; overflow-y:auto; }
+        .tab-panel.active { display:flex; flex-direction:column; }
+        .panel-body { padding:1.5rem; }
+
+        /* ── Stats grid ── */
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.75rem; margin-bottom:1.25rem; }
+        .stat-card { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:0.85rem 1rem; }
+        .stat-card .lbl { font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.2rem; }
+        .stat-card .val { font-size:1.4rem; font-weight:700; }
+
+        /* ── Info bar ── */
+        .info-bar { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:0.6rem 1rem; margin-bottom:1.25rem; display:flex; gap:1.5rem; flex-wrap:wrap; font-size:0.78rem; color:var(--text-muted); }
+        .info-bar strong { color:var(--text); }
+
+        /* ── Controls ── */
+        .controls { display:flex; gap:0.5rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+        .btn { display:inline-flex; align-items:center; gap:0.35rem; padding:0.4rem 0.9rem; border:none; border-radius:var(--radius); font-size:0.8rem; font-weight:600; cursor:pointer; transition:filter 0.15s; }
+        .btn:hover { filter:brightness(1.1); }
+        .btn:disabled { opacity:0.4; cursor:not-allowed; }
+        .btn-green { background:var(--green); color:#000; }
+        .btn-red { background:var(--red); color:#fff; }
+        .btn-amber { background:var(--amber); color:#000; }
+        .btn-blue { background:var(--blue); color:#fff; }
+        .btn-sm { padding:0.2rem 0.55rem; font-size:0.72rem; border-radius:4px; }
+
+        /* ── Section headers ── */
+        .section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem; }
+        .section-head h3 { font-size:0.9rem; font-weight:700; }
+
+        /* ── Tables ── */
+        .tbl { width:100%; border-collapse:collapse; background:var(--bg-panel); border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); font-size:0.8rem; }
+        .tbl th { background:var(--bg-card); padding:0.5rem 0.75rem; text-align:left; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); font-weight:600; white-space:nowrap; }
+        .tbl td { padding:0.45rem 0.75rem; border-top:1px solid var(--border-muted); vertical-align:middle; }
+        .tbl tr:hover td { background:rgba(255,255,255,0.015); }
+        .tbl .empty { text-align:center; padding:2rem; color:var(--text-muted); }
+
+        /* ── Worker status badges ── */
+        .ws { display:inline-flex; align-items:center; gap:0.3rem; padding:0.15rem 0.55rem; border-radius:12px; font-size:0.68rem; font-weight:600; }
+        .ws .dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+        .ws.running { background:rgba(63,185,80,0.12); color:var(--green); }
+        .ws.stopped { background:rgba(248,81,73,0.12); color:var(--red); }
+        .ws.faulted { background:rgba(188,140,255,0.12); color:var(--purple); }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+        .ws.running .dot { animation:pulse 2s infinite; }
+        .fault-msg { font-size:0.68rem; color:var(--purple); margin-top:0.15rem; }
+
+        /* ── Job status chips ── */
+        .jc { display:inline-flex; align-items:center; padding:0.1rem 0.5rem; border-radius:10px; font-size:0.65rem; font-weight:600; text-transform:uppercase; }
+        .jc.processed { background:rgba(63,185,80,0.12); color:var(--green); }
+        .jc.processing { background:rgba(56,139,253,0.12); color:var(--blue); }
+        .jc.failed { background:rgba(248,81,73,0.12); color:var(--red); }
+        .mono { font-family:'Consolas','Cascadia Code','Monaco',monospace; font-size:0.75rem; color:var(--amber); }
+
+        /* ── Pagination ── */
+        .pager { display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem; justify-content:center; font-size:0.78rem; }
+        .pager button { background:var(--bg-card); border:1px solid var(--border); color:var(--text); padding:0.3rem 0.7rem; border-radius:var(--radius); cursor:pointer; font-size:0.75rem; }
+        .pager button:disabled { opacity:0.35; cursor:not-allowed; }
+        .pager button:not(:disabled):hover { border-color:var(--blue); color:var(--blue); }
+        .pager .info { color:var(--text-muted); }
+
+        /* ── Log Viewer ── */
+        .log-layout { display:flex; flex:1; overflow:hidden; min-height:0; }
+        .log-files { width:220px; flex-shrink:0; border-right:1px solid var(--border); background:var(--bg-panel); display:flex; flex-direction:column; }
+        .log-files-head { padding:0.75rem; border-bottom:1px solid var(--border); font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
+        .log-file-item { padding:0.5rem 0.75rem; cursor:pointer; font-size:0.8rem; border-left:2px solid transparent; transition:all 0.1s; }
+        .log-file-item:hover { background:var(--bg-card); }
+        .log-file-item.active { background:rgba(56,139,253,0.08); border-left-color:var(--blue); color:var(--text); }
+        .log-file-item .fname { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .log-file-item .fmeta { font-size:0.68rem; color:var(--text-muted); margin-top:0.1rem; }
+        .log-main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+        .log-toolbar { padding:0.6rem 1rem; border-bottom:1px solid var(--border); background:var(--bg-panel); display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; flex-shrink:0; }
+        .log-search { flex:1; min-width:180px; padding:0.35rem 0.75rem; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:0.8rem; }
+        .log-search:focus { outline:none; border-color:var(--blue); }
+        .level-filter { display:flex; gap:0.3rem; flex-wrap:wrap; }
+        .lvl-btn { padding:0.25rem 0.6rem; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; font-size:0.7rem; font-weight:600; cursor:pointer; color:var(--text-muted); transition:all 0.15s; }
+        .lvl-btn:hover { color:var(--text); }
+        .lvl-btn.active-DEBUG   { background:rgba(139,148,158,0.2); border-color:var(--text-muted); color:var(--text-muted); }
+        .lvl-btn.active-INFO    { background:rgba(56,139,253,0.15); border-color:var(--blue); color:var(--blue); }
+        .lvl-btn.active-NOTICE  { background:rgba(56,209,253,0.15); border-color:#38d9fd; color:#38d9fd; }
+        .lvl-btn.active-WARNING { background:rgba(210,153,34,0.15); border-color:var(--amber); color:var(--amber); }
+        .lvl-btn.active-ERROR   { background:rgba(248,81,73,0.15); border-color:var(--red); color:var(--red); }
+        .lvl-btn.active-CRITICAL{ background:rgba(188,140,255,0.2); border-color:var(--purple); color:var(--purple); }
+        .lvl-btn.active-ALERT   { background:rgba(188,140,255,0.25); border-color:var(--purple); color:var(--purple); }
+        .lvl-btn.active-EMERGENCY{ background:rgba(248,81,73,0.3); border-color:var(--red); color:var(--red); }
+        .log-entries { flex:1; overflow-y:auto; }
+        .log-entry { border-bottom:1px solid var(--border-muted); }
+        .log-entry-head { display:flex; align-items:center; gap:0.75rem; padding:0.55rem 1rem; cursor:pointer; transition:background 0.1s; }
+        .log-entry-head:hover { background:var(--bg-card); }
+        .log-entry-head.expanded { background:var(--bg-card); }
+        .log-ts { font-size:0.72rem; color:var(--text-muted); white-space:nowrap; font-family:monospace; flex-shrink:0; }
+        .log-level { font-size:0.65rem; font-weight:700; padding:0.1rem 0.5rem; border-radius:10px; white-space:nowrap; flex-shrink:0; }
+        .log-level.DEBUG    { background:rgba(139,148,158,0.2); color:var(--text-muted); }
+        .log-level.INFO     { background:rgba(56,139,253,0.15); color:var(--blue); }
+        .log-level.NOTICE   { background:rgba(56,209,253,0.15); color:#38d9fd; }
+        .log-level.WARNING  { background:rgba(210,153,34,0.15); color:var(--amber); }
+        .log-level.ERROR    { background:rgba(248,81,73,0.15); color:var(--red); }
+        .log-level.CRITICAL { background:rgba(188,140,255,0.2); color:var(--purple); }
+        .log-level.ALERT    { background:rgba(188,140,255,0.25); color:var(--purple); }
+        .log-level.EMERGENCY{ background:rgba(248,81,73,0.3); color:var(--red); font-size:0.72rem; }
+        .log-channel { font-size:0.68rem; color:var(--text-subtle); flex-shrink:0; }
+        .log-msg { flex:1; font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+        .log-chevron { color:var(--text-subtle); font-size:0.7rem; flex-shrink:0; transition:transform 0.15s; }
+        .log-entry-head.expanded .log-chevron { transform:rotate(90deg); }
+        .log-entry-detail { display:none; padding:0.75rem 1rem 0.75rem 2.5rem; background:var(--bg); border-top:1px solid var(--border-muted); }
+        .log-entry-detail.show { display:block; }
+        .log-detail-msg { font-size:0.82rem; margin-bottom:0.5rem; word-break:break-word; }
+        .log-detail-pre { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:0.75rem; font-family:monospace; font-size:0.72rem; color:var(--text-muted); white-space:pre-wrap; word-break:break-all; max-height:350px; overflow-y:auto; margin-top:0.35rem; }
+        .log-empty { padding:3rem; text-align:center; color:var(--text-muted); }
+
+        /* ── Mails placeholder ── */
+        .coming-soon { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; color:var(--text-muted); padding:3rem; }
+        .coming-soon .icon { font-size:3.5rem; }
+        .coming-soon h3 { font-size:1.1rem; color:var(--text); }
+        .coming-soon p { font-size:0.85rem; text-align:center; max-width:400px; line-height:1.6; }
+
+        /* ── Modals ── */
+        .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; padding:1rem; }
+        .overlay.show { display:flex; }
+        .modal { background:var(--bg-panel); border:1px solid var(--border); border-radius:10px; padding:1.5rem; width:520px; max-width:100%; max-height:90vh; overflow-y:auto; box-shadow:0 25px 80px rgba(0,0,0,0.6); }
+        .modal-wide { width:740px; }
+        .modal h3 { font-size:1rem; font-weight:700; margin-bottom:1rem; }
+        .modal label { display:block; font-size:0.75rem; color:var(--text-muted); margin-top:0.75rem; margin-bottom:0.2rem; }
+        .modal input,.modal select,.modal textarea { width:100%; padding:0.45rem 0.75rem; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:0.82rem; }
+        .modal input:focus,.modal select:focus,.modal textarea:focus { outline:none; border-color:var(--blue); }
+        .modal textarea { font-family:monospace; resize:vertical; min-height:80px; }
+        .modal-foot { display:flex; gap:0.6rem; justify-content:flex-end; margin-top:1.25rem; flex-wrap:wrap; }
+        .btn-cancel { padding:0.4rem 0.9rem; background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:var(--radius); cursor:pointer; font-size:0.82rem; }
+        .btn-cancel:hover { border-color:var(--text-muted); color:var(--text); }
+        .row-2 { display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; }
+        .row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.6rem; }
+        .section-divider { margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border); }
+        .section-divider h4 { font-size:0.82rem; font-weight:700; margin-bottom:0.25rem; }
+        .section-divider p { font-size:0.72rem; color:var(--text-muted); }
+        .vr { margin-top:0.35rem; padding:0.35rem 0.75rem; background:rgba(63,185,80,0.08); border:1px solid rgba(63,185,80,0.2); color:var(--green); border-radius:var(--radius); font-size:0.75rem; display:none; }
+        .vi { margin-top:0.35rem; padding:0.35rem 0.75rem; background:rgba(248,81,73,0.08); border:1px solid rgba(248,81,73,0.2); color:var(--red); border-radius:var(--radius); font-size:0.75rem; display:none; }
+        .vr.show,.vi.show { display:block; }
+        .toggle-row { display:flex; align-items:center; justify-content:space-between; margin-top:0.75rem; }
+        .toggle-row label { margin-top:0; font-size:0.82rem; color:var(--text); }
+        .switch { position:relative; width:36px; height:20px; }
+        .switch input { opacity:0; width:0; height:0; }
+        .switch-track { position:absolute; inset:0; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:background 0.2s; }
+        .switch-track:before { content:''; position:absolute; width:14px; height:14px; left:2px; top:2px; background:var(--text-muted); border-radius:50%; transition:transform 0.2s,background 0.2s; }
+        input:checked + .switch-track { background:rgba(63,185,80,0.3); border-color:var(--green); }
+        input:checked + .switch-track:before { transform:translateX(16px); background:var(--green); }
+
+        /* ── Exception pre ── */
+        .exc-pre { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:0.75rem; font-family:monospace; font-size:0.7rem; color:var(--red); white-space:pre-wrap; word-break:break-all; max-height:380px; overflow-y:auto; margin-top:0.5rem; }
+
+        /* ── Toast ── */
+        .toast { position:fixed; bottom:1.5rem; right:1.5rem; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:0.65rem 1.25rem; font-size:0.82rem; box-shadow:0 8px 30px rgba(0,0,0,0.5); transform:translateY(80px); opacity:0; transition:all 0.25s; z-index:300; max-width:400px; }
+        .toast.show { transform:translateY(0); opacity:1; }
+        .toast.success { border-color:var(--green); }
+        .toast.error { border-color:var(--red); }
+
+        @media(max-width:768px) {
+            body { flex-direction:column; }
+            .sidebar { width:100%; min-height:auto; }
+            .log-layout { flex-direction:column; }
+            .log-files { width:100%; border-right:none; border-bottom:1px solid var(--border); max-height:180px; overflow-y:auto; }
         }
     </style>
 </head>
 <body>
-    <!-- ── Sidebar: Site List ── -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <h1>⚡ Queue Watcher</h1>
-            <div class="sub">Multi-Site Supervisor · {{.DashboardAddr}}</div>
-        </div>
 
-        <div class="site-list" id="site-list">
-            <!-- Populated by JS -->
+<!-- ── Sidebar ── -->
+<div class="sidebar">
+    <div class="sidebar-brand">
+        <h1>⚡ Queue Watcher</h1>
+        <div class="addr">{{.DashboardAddr}}</div>
+    </div>
+    <div class="site-list" id="site-list"></div>
+    <div class="sidebar-footer">
+        <button class="btn-sidebar primary" onclick="openAddSiteModal()">+ Add Site</button>
+        <div style="display:flex;gap:0.4rem;">
+            <button class="btn-sidebar" style="flex:1" onclick="openSettingsModal()">⚙️ Settings</button>
+            <button class="btn-sidebar" style="flex:1" onclick="checkForUpdates()">🔄 Updates</button>
         </div>
+        <div class="version-chip" id="version-chip">—</div>
+    </div>
+</div>
 
-        <div class="sidebar-footer">
-            <button class="btn-add-site" onclick="openAddSiteModal()">+ Add Site</button>
-        </div>
+<!-- ── Main ── -->
+<div class="main" id="main">
+    <div class="empty-screen" id="screen-empty">
+        <div class="icon">📦</div>
+        <div>Select a site from the sidebar or add a new one.</div>
     </div>
 
-    <!-- ── Main Content ── -->
-    <div class="main">
-        <div id="main-empty" class="empty-main">
-            <div class="icon">📦</div>
-            <div>Select a site from the sidebar or add a new one.</div>
-        </div>
-
-        <div class="container" id="main-content" style="display:none;">
-            <div class="site-header">
-                <h2 id="site-title">—</h2>
-                <div style="display:flex;gap:0.5rem;">
-                    <button class="remove-btn" style="border-color:var(--accent-blue);color:var(--accent-blue);" onclick="openEditSiteModal()">✏️ Edit Settings</button>
-                    <button class="remove-btn" onclick="removeSite()">🗑️ Remove Site</button>
-                </div>
-            </div>
-
-            <div class="info-bar">
-                <span>📂 <strong id="info-path">—</strong></span>
-                <span>🌿 Branch: <strong id="info-branch">—</strong></span>
-            </div>
-
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="label">Active Workers</div>
-                    <div class="value" id="stat-workers">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">📥 Queue Depth</div>
-                    <div class="value" style="color:var(--accent-amber)" id="stat-queue-depth">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">⏳ In-Flight</div>
-                    <div class="value" style="color:var(--accent-blue)" id="stat-jobs-inflight-top">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">✅ Jobs Processed</div>
-                    <div class="value" style="color:var(--accent-green)" id="stat-jobs-processed-top">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">❌ Jobs Failed</div>
-                    <div class="value" style="color:var(--accent-red)" id="stat-jobs-failed-top">0</div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Deployments</div>
-                    <div class="value" id="stat-deploy-count">0</div>
-                </div>
-            </div>
-
-            <!-- ── DB Connection Status ── -->
-            <div class="info-bar" id="db-status-bar" style="display:none;">
-                <span id="db-status-text">🔌 Database: <strong>Disconnected</strong></span>
-            </div>
-
-            <div class="controls">
-                <button class="btn btn-green" onclick="openSpawnWorkerModal()">➕ Spawn Worker</button>
-                <button class="btn btn-amber" onclick="triggerReload()">🔄 Hot-Reload All</button>
-            </div>
-
-            <!-- ── Pending Jobs (from Laravel DB) ── -->
-            <div id="pending-jobs-section" style="margin-bottom:1.5rem; display:none;">
-                <h3 style="font-size:1rem; margin-bottom:0.75rem;">📥 Pending Jobs <span id="pending-count-badge" style="font-size:0.75rem; color:var(--text-secondary);"></span></h3>
-                <table class="jobs-table">
-                    <thead>
-                        <tr>
-                            <th>Queue</th>
-                            <th>Job</th>
-                            <th>Attempts</th>
-                            <th>Created</th>
-                            <th>Waiting</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pending-jobs-body">
-                        <tr><td colspan="5" class="empty-state">No pending jobs</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <h3 style="font-size:1rem; margin-bottom:0.75rem;">🖥️ Worker Processes</h3>
-
-            <table class="workers-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Label</th>
-                        <th>Queue</th>
-                        <th>Status</th>
-                        <th>Current Job</th>
-                        <th>PID</th>
-                        <th>Uptime</th>
-                        <th>Restarts</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="workers-body">
-                    <tr><td colspan="9" class="empty-state">No workers</td></tr>
-                </tbody>
-            </table>
-
-            <!-- ── Queue Performance Stats ── -->
-            <div id="queue-stats-section" style="margin-top:2rem; display:none;">
-                <h3 style="font-size:1rem; margin-bottom:0.75rem;">📊 Queue Performance</h3>
-                <table class="jobs-table">
-                    <thead>
-                        <tr>
-                            <th>Queue</th>
-                            <th>Processed</th>
-                            <th>Failed</th>
-                            <th>Avg Wait Time</th>
-                            <th>Avg Execution Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="queue-stats-body">
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- ── Job History ── -->
-            <div style="margin-top:2rem;">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
-                    <h3 style="font-size:1rem;">
-                        📋 Job Processing History
-                    </h3>
-                    <div style="display:flex; gap:1rem; font-size:0.75rem; color:var(--text-secondary);">
-                        <span>✅ Processed: <strong id="stat-jobs-processed" style="color:var(--accent-green)">0</strong></span>
-                        <span>❌ Failed: <strong id="stat-jobs-failed" style="color:var(--accent-red)">0</strong></span>
-                        <span>⏳ In-flight: <strong id="stat-jobs-inflight" style="color:var(--accent-blue)">0</strong></span>
+    <div id="screen-site" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+        <!-- Top bar -->
+        <div class="site-topbar">
+            <div class="site-topbar-row">
+                <div>
+                    <h2 id="site-title">—</h2>
+                    <div class="topbar-meta" style="margin-top:0.3rem;">
+                        <span>📂 <strong id="info-path">—</strong></span>
+                        <span>🌿 <strong id="info-branch">—</strong></span>
+                        <span id="db-status-inline"></span>
                     </div>
                 </div>
+                <div class="topbar-actions">
+                    <button class="btn-ghost" onclick="openEditSiteModal()">✏️ Edit</button>
+                    <button class="btn-ghost danger" onclick="removeSite()">🗑️ Remove</button>
+                </div>
+            </div>
+            <div class="tabs" id="tabs">
+                <div class="tab active" onclick="switchTab('workers')" id="tab-workers">
+                    🖥️ Queue Workers
+                    <span class="tab-badge" id="tbadge-workers">0</span>
+                </div>
+                <div class="tab" onclick="switchTab('logs')" id="tab-logs">
+                    📋 Logs
+                    <span class="tab-badge" id="tbadge-logs">0</span>
+                </div>
+                <div class="tab" onclick="switchTab('mails')" id="tab-mails">
+                    ✉️ Mails
+                    <span class="tab-badge" id="tbadge-mails">Soon</span>
+                </div>
+            </div>
+        </div>
 
-                <div id="jobs-panel">
-                    <table class="jobs-table">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Status</th>
-                                <th>Queue</th>
-                                <th>Job</th>
-                                <th>Wait</th>
-                                <th>Exec</th>
-                            </tr>
-                        </thead>
-                        <tbody id="jobs-body">
-                            <tr><td colspan="6" class="empty-state">No jobs recorded yet. Jobs appear here in real-time as workers process them.</td></tr>
-                        </tbody>
+        <!-- Tab panels -->
+        <div class="tab-content">
+
+            <!-- ── QUEUE WORKERS ── -->
+            <div class="tab-panel active" id="panel-workers">
+                <div class="panel-body">
+
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="lbl">Workers</div><div class="val" id="s-workers">0</div></div>
+                        <div class="stat-card"><div class="lbl">Queue Depth</div><div class="val" style="color:var(--amber)" id="s-depth">0</div></div>
+                        <div class="stat-card"><div class="lbl">In-Flight</div><div class="val" style="color:var(--blue)" id="s-inflight">0</div></div>
+                        <div class="stat-card"><div class="lbl">Processed</div><div class="val" style="color:var(--green)" id="s-processed">0</div></div>
+                        <div class="stat-card"><div class="lbl">Failed</div><div class="val" style="color:var(--red)" id="s-failed">0</div></div>
+                        <div class="stat-card"><div class="lbl">Deployments</div><div class="val" id="s-deploys">0</div></div>
+                    </div>
+
+                    <div class="controls">
+                        <button class="btn btn-green" onclick="openSpawnWorkerModal()">➕ Spawn Worker</button>
+                        <button class="btn btn-amber" onclick="triggerReload()">🔄 Hot-Reload All</button>
+                    </div>
+
+                    <!-- Pending jobs -->
+                    <div id="pending-section" style="margin-bottom:1.5rem;display:none;">
+                        <div class="section-head">
+                            <h3>📥 Pending Jobs <span id="pending-badge" style="font-weight:400;font-size:0.8rem;color:var(--text-muted)"></span></h3>
+                        </div>
+                        <table class="tbl">
+                            <thead><tr><th>Queue</th><th>Job</th><th>Attempts</th><th>Created</th><th>Wait</th></tr></thead>
+                            <tbody id="pending-body"><tr><td colspan="5" class="empty">No pending jobs</td></tr></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Workers -->
+                    <div class="section-head"><h3>🖥️ Worker Processes</h3></div>
+                    <table class="tbl" id="workers-tbl">
+                        <thead><tr><th>ID</th><th>Label</th><th>Queue</th><th>Status</th><th>Current Job</th><th>PID</th><th>Uptime</th><th>Restarts</th><th></th></tr></thead>
+                        <tbody id="workers-body"><tr><td colspan="9" class="empty">No workers</td></tr></tbody>
                     </table>
+
+                    <!-- Queue stats -->
+                    <div id="qstats-section" style="margin-top:1.5rem;display:none;">
+                        <div class="section-head"><h3>📊 Queue Performance</h3></div>
+                        <table class="tbl">
+                            <thead><tr><th>Queue</th><th>Processed</th><th>Failed</th><th>Avg Wait</th><th>Avg Exec</th></tr></thead>
+                            <tbody id="qstats-body"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Job history -->
+                    <div style="margin-top:1.5rem;">
+                        <div class="section-head">
+                            <h3>📋 Job History</h3>
+                            <div style="display:flex;gap:1rem;font-size:0.75rem;color:var(--text-muted);">
+                                <span>✅ <strong id="h-processed" style="color:var(--green)">0</strong></span>
+                                <span>❌ <strong id="h-failed" style="color:var(--red)">0</strong></span>
+                                <span>⏳ <strong id="h-inflight" style="color:var(--blue)">0</strong></span>
+                            </div>
+                        </div>
+                        <table class="tbl">
+                            <thead><tr><th>Time</th><th>Status</th><th>Queue</th><th>Job</th><th>Wait</th><th>Exec</th></tr></thead>
+                            <tbody id="jobs-body"><tr><td colspan="6" class="empty">No jobs yet — they appear here in real-time.</td></tr></tbody>
+                        </table>
+                        <div class="pager" id="jobs-pager"></div>
+                    </div>
+
+                    <!-- Failed jobs -->
+                    <div id="failed-section" style="margin-top:1.5rem;display:none;">
+                        <div class="section-head">
+                            <h3>💀 Failed Jobs <span id="failed-badge" style="font-weight:400;font-size:0.8rem;color:var(--text-muted)"></span></h3>
+                        </div>
+                        <table class="tbl">
+                            <thead><tr><th>Failed At</th><th>Queue</th><th>Job</th><th>Exception</th><th></th></tr></thead>
+                            <tbody id="failed-body"><tr><td colspan="5" class="empty">No failed jobs</td></tr></tbody>
+                        </table>
+                        <div class="pager" id="failed-pager"></div>
+                    </div>
+
                 </div>
             </div>
 
-            <!-- ── Failed Jobs (from Laravel DB) ── -->
-            <div id="failed-jobs-section" style="margin-top:2rem; display:none;">
-                <h3 style="font-size:1rem; margin-bottom:0.75rem;">💀 Failed Jobs <span id="failed-count-badge" style="font-size:0.75rem; color:var(--text-secondary);"></span></h3>
-                <table class="jobs-table">
-                    <thead>
-                        <tr>
-                            <th>Failed At</th>
-                            <th>Queue</th>
-                            <th>Job</th>
-                            <th>Exception</th>
-                        </tr>
-                    </thead>
-                    <tbody id="failed-jobs-body">
-                        <tr><td colspan="4" class="empty-state">No failed jobs</td></tr>
-                    </tbody>
-                </table>
+            <!-- ── LOGS ── -->
+            <div class="tab-panel" id="panel-logs">
+                <div class="log-layout">
+                    <div class="log-files">
+                        <div class="log-files-head">Log Files</div>
+                        <div id="log-file-list" style="flex:1;overflow-y:auto;"></div>
+                    </div>
+                    <div class="log-main">
+                        <div class="log-toolbar">
+                            <input class="log-search" id="log-search" type="search" placeholder="🔍 Search messages…" oninput="debounceLogSearch()" />
+                            <div class="level-filter" id="level-filter">
+                                <button class="lvl-btn" data-level="" onclick="setLevelFilter('')">All</button>
+                                <button class="lvl-btn" data-level="DEBUG" onclick="setLevelFilter('DEBUG')">Debug</button>
+                                <button class="lvl-btn" data-level="INFO" onclick="setLevelFilter('INFO')">Info</button>
+                                <button class="lvl-btn" data-level="NOTICE" onclick="setLevelFilter('NOTICE')">Notice</button>
+                                <button class="lvl-btn" data-level="WARNING" onclick="setLevelFilter('WARNING')">Warning</button>
+                                <button class="lvl-btn" data-level="ERROR" onclick="setLevelFilter('ERROR')">Error</button>
+                                <button class="lvl-btn" data-level="CRITICAL" onclick="setLevelFilter('CRITICAL')">Critical</button>
+                            </div>
+                            <button class="btn btn-sm btn-blue" onclick="refreshLogs()">↺ Refresh</button>
+                        </div>
+                        <div class="log-entries" id="log-entries">
+                            <div class="log-empty">Select a log file from the left panel.</div>
+                        </div>
+                        <div class="pager" id="log-pager" style="padding:0.5rem 1rem;justify-content:flex-start;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── MAILS ── -->
+            <div class="tab-panel" id="panel-mails">
+                <div class="coming-soon">
+                    <div class="icon">✉️</div>
+                    <h3>Mail Viewer — Coming Soon</h3>
+                    <p>This tab will let you browse Laravel mailables sent by your application. Configure recipients and SMTP settings in <strong>⚙️ Settings → Notifications</strong> to receive email alerts for failures and log errors today.</p>
+                </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- ── Add Site Modal ── -->
-    <div class="modal-overlay" id="modal-overlay">
-        <div class="modal">
-            <h3>Add Laravel Site</h3>
+<!-- ══════════ MODALS ══════════ -->
 
-            <label>Project Directory Path</label>
-            <input type="text" id="add-path" placeholder="C:\inetpub\wwwroot\my-laravel-app" />
-            <button class="btn btn-small" style="background:var(--accent-blue);color:#fff;margin-top:0.4rem;" onclick="validatePath()">Validate</button>
-            <div class="validation-result" id="validation-result"></div>
-
-            <label>Site Name (optional)</label>
-            <input type="text" id="add-name" placeholder="Auto-detected from folder name" />
-
+<!-- Add Site -->
+<div class="overlay" id="m-add">
+    <div class="modal">
+        <h3>➕ Add Laravel Site</h3>
+        <label>Project Directory Path</label>
+        <input id="add-path" type="text" placeholder="C:\inetpub\wwwroot\my-app" />
+        <button class="btn btn-sm btn-blue" style="margin-top:0.4rem;" onclick="validatePath()">Validate Path</button>
+        <div class="vr" id="add-vr"></div><div class="vi" id="add-vi"></div>
+        <label>Site Name <span style="font-size:0.7rem;color:var(--text-muted)">(optional)</span></label>
+        <input id="add-name" placeholder="Auto-detected from folder" />
+        <div class="row-2">
+            <div><label>Worker Count</label><input id="add-workers" type="number" value="2" min="1" max="20" /></div>
+            <div><label>Queue Connection</label><input id="add-connection" value="redis" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>Queue Names</label><input id="add-queues" value="default" /></div>
+            <div><label>Git Branch</label><input id="add-branch" value="main" /></div>
+        </div>
+        <div class="section-divider">
+            <h4>🔌 Database Connection</h4>
+            <p>Map .env keys to database credentials for queue monitoring.</p>
+            <button class="btn btn-sm btn-blue" style="margin-top:0.5rem;" onclick="loadEnvKeys('add')">Load .env Keys</button>
+            <div class="row-2" style="margin-top:0.4rem;">
+                <div><label>Host Key</label><select id="add-db-host-env"><option value="">— not set —</option></select></div>
+                <div><label>Port Key</label><select id="add-db-port-env"><option value="">— not set —</option></select></div>
+            </div>
+            <label>Database Key</label><select id="add-db-database-env"><option value="">— not set —</option></select>
             <div class="row-2">
-                <div>
-                    <label>Worker Count</label>
-                    <input type="number" id="add-workers" value="2" min="1" max="20" />
-                </div>
-                <div>
-                    <label>Queue Connection</label>
-                    <input type="text" id="add-connection" value="redis" />
-                </div>
-            </div>
-
-            <div class="row-2">
-                <div>
-                    <label>Queue Names</label>
-                    <input type="text" id="add-queues" value="default" />
-                </div>
-                <div>
-                    <label>Git Branch</label>
-                    <input type="text" id="add-branch" value="main" />
-                </div>
-            </div>
-
-            <div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border);">
-                <h4 style="font-size:0.85rem; margin-bottom:0.25rem;">🔌 Database Connection</h4>
-                <p style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:0.5rem;">
-                    Select which .env keys map to the database credentials for reading jobs/failed_jobs tables.
-                </p>
-                <button class="btn btn-small" style="background:var(--accent-blue);color:#fff;" onclick="loadEnvKeys('add')">Load .env Keys</button>
-                <div class="row-2" style="margin-top:0.5rem;">
-                    <div>
-                        <label>Host</label>
-                        <select id="add-db-host-env"><option value="">— not set —</option></select>
-                    </div>
-                    <div>
-                        <label>Port</label>
-                        <select id="add-db-port-env"><option value="">— not set —</option></select>
-                    </div>
-                </div>
-                <div>
-                    <label>Database</label>
-                    <select id="add-db-database-env"><option value="">— not set —</option></select>
-                </div>
-                <div class="row-2">
-                    <div>
-                        <label>Username</label>
-                        <select id="add-db-username-env"><option value="">— not set —</option></select>
-                    </div>
-                    <div>
-                        <label>Password</label>
-                        <select id="add-db-password-env"><option value="">— not set —</option></select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="modal-actions">
-                <button class="modal-actions btn-cancel" onclick="closeAddSiteModal()">Cancel</button>
-                <button class="btn btn-green" id="btn-add-confirm" onclick="addSite()">Add Site</button>
+                <div><label>Username Key</label><select id="add-db-username-env"><option value="">— not set —</option></select></div>
+                <div><label>Password Key</label><select id="add-db-password-env"><option value="">— not set —</option></select></div>
             </div>
         </div>
-    </div>
-
-    <!-- ── Edit Site Modal ── -->
-    <div class="modal-overlay" id="edit-modal-overlay">
-        <div class="modal">
-            <h3>Edit Site Settings</h3>
-            <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.5rem;">
-                Change site name, git branch, or database key mappings. Per-worker settings are edited individually.
-            </p>
-
-            <label>Site Name</label>
-            <input type="text" id="edit-name" />
-
-            <label>Git Branch</label>
-            <input type="text" id="edit-branch" />
-
-            <div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border);">
-                <h4 style="font-size:0.85rem; margin-bottom:0.25rem;">🔌 Database Connection (.env Keys)</h4>
-                <button class="btn btn-small" style="background:var(--accent-blue);color:#fff;" onclick="loadEnvKeys('edit')">Reload .env Keys</button>
-                <div class="row-2" style="margin-top:0.5rem;">
-                    <div>
-                        <label>Host</label>
-                        <select id="edit-db-host-env"><option value="">— not set —</option></select>
-                    </div>
-                    <div>
-                        <label>Port</label>
-                        <select id="edit-db-port-env"><option value="">— not set —</option></select>
-                    </div>
-                </div>
-                <div>
-                    <label>Database</label>
-                    <select id="edit-db-database-env"><option value="">— not set —</option></select>
-                </div>
-                <div class="row-2">
-                    <div>
-                        <label>Username</label>
-                        <select id="edit-db-username-env"><option value="">— not set —</option></select>
-                    </div>
-                    <div>
-                        <label>Password</label>
-                        <select id="edit-db-password-env"><option value="">— not set —</option></select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="modal-actions">
-                <button class="modal-actions btn-cancel" onclick="closeEditSiteModal()">Cancel</button>
-                <button class="btn btn-green" onclick="saveEditSite()">💾 Save</button>
-            </div>
+        <div class="modal-foot">
+            <button class="btn-cancel" onclick="closeModal('m-add')">Cancel</button>
+            <button class="btn btn-green" onclick="addSite()">Add Site</button>
         </div>
     </div>
+</div>
 
-    <!-- ── Spawn Worker Modal ── -->
-    <div class="modal-overlay" id="spawn-modal-overlay">
-        <div class="modal">
-            <h3>➕ Spawn New Worker</h3>
-            <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.5rem;">
-                Configure the artisan queue:work settings for this worker.
-            </p>
-
-            <label>Label (descriptive name)</label>
-            <input type="text" id="spawn-label" placeholder="e.g. Mail Worker, Default Queue" />
-
-            <div class="row-2">
-                <div>
-                    <label>Queue Connection</label>
-                    <input type="text" id="spawn-connection" value="redis" />
-                </div>
-                <div>
-                    <label>Queue Names</label>
-                    <input type="text" id="spawn-queues" value="default" placeholder="default,emails,reports" />
-                </div>
+<!-- Edit Site -->
+<div class="overlay" id="m-edit">
+    <div class="modal">
+        <h3>✏️ Edit Site Settings</h3>
+        <label>Site Name</label><input id="edit-name" />
+        <label>Git Branch</label><input id="edit-branch" />
+        <div class="section-divider">
+            <h4>🔌 Database Connection</h4>
+            <button class="btn btn-sm btn-blue" style="margin-top:0.5rem;" onclick="loadEnvKeys('edit')">Reload .env Keys</button>
+            <div class="row-2" style="margin-top:0.4rem;">
+                <div><label>Host Key</label><select id="edit-db-host-env"><option value="">— not set —</option></select></div>
+                <div><label>Port Key</label><select id="edit-db-port-env"><option value="">— not set —</option></select></div>
             </div>
-
+            <label>Database Key</label><select id="edit-db-database-env"><option value="">— not set —</option></select>
             <div class="row-2">
-                <div>
-                    <label>Max Memory (MB)</label>
-                    <input type="number" id="spawn-memory" value="128" min="32" max="2048" />
-                </div>
-                <div>
-                    <label>Timeout (seconds)</label>
-                    <input type="number" id="spawn-timeout" value="60" min="0" max="3600" />
-                </div>
-            </div>
-
-            <div class="row-2">
-                <div>
-                    <label>Max Jobs (0 = unlimited)</label>
-                    <input type="number" id="spawn-maxjobs" value="0" min="0" />
-                </div>
-                <div>
-                    <label>Tries</label>
-                    <input type="number" id="spawn-tries" value="3" min="1" max="100" />
-                </div>
-            </div>
-
-            <div class="modal-actions">
-                <button class="modal-actions btn-cancel" onclick="closeSpawnWorkerModal()">Cancel</button>
-                <button class="btn btn-green" onclick="saveSpawnWorker()">🚀 Spawn Worker</button>
+                <div><label>Username Key</label><select id="edit-db-username-env"><option value="">— not set —</option></select></div>
+                <div><label>Password Key</label><select id="edit-db-password-env"><option value="">— not set —</option></select></div>
             </div>
         </div>
-    </div>
-
-    <!-- ── Edit Worker Modal ── -->
-    <div class="modal-overlay" id="worker-edit-modal-overlay">
-        <div class="modal">
-            <h3>✏️ Edit Worker <span id="worker-edit-title"></span></h3>
-            <p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.5rem;">
-                Saving will stop this worker and restart it with the new config.
-            </p>
-
-            <input type="hidden" id="worker-edit-id" />
-
-            <label>Label</label>
-            <input type="text" id="worker-edit-label" />
-
-            <div class="row-2">
-                <div>
-                    <label>Queue Connection</label>
-                    <input type="text" id="worker-edit-connection" />
-                </div>
-                <div>
-                    <label>Queue Names</label>
-                    <input type="text" id="worker-edit-queues" placeholder="default,emails,reports" />
-                </div>
-            </div>
-
-            <div class="row-2">
-                <div>
-                    <label>Max Memory (MB)</label>
-                    <input type="number" id="worker-edit-memory" min="32" max="2048" />
-                </div>
-                <div>
-                    <label>Timeout (seconds)</label>
-                    <input type="number" id="worker-edit-timeout" min="0" max="3600" />
-                </div>
-            </div>
-
-            <div class="row-2">
-                <div>
-                    <label>Max Jobs (0 = unlimited)</label>
-                    <input type="number" id="worker-edit-maxjobs" min="0" />
-                </div>
-                <div>
-                    <label>Tries</label>
-                    <input type="number" id="worker-edit-tries" min="1" max="100" />
-                </div>
-            </div>
-
-            <div class="modal-actions">
-                <button class="modal-actions btn-cancel" onclick="closeEditWorkerModal()">Cancel</button>
-                <button class="btn btn-green" onclick="saveEditWorker()">💾 Save &amp; Restart</button>
-            </div>
+        <div class="modal-foot">
+            <button class="btn-cancel" onclick="closeModal('m-edit')">Cancel</button>
+            <button class="btn btn-green" onclick="saveEditSite()">💾 Save</button>
         </div>
     </div>
+</div>
 
-    <div class="toast" id="toast"></div>
+<!-- Spawn Worker -->
+<div class="overlay" id="m-spawn">
+    <div class="modal">
+        <h3>➕ Spawn New Worker</h3>
+        <label>Label</label><input id="sp-label" placeholder="e.g. Mail Worker" />
+        <div class="row-2">
+            <div><label>Queue Connection</label><input id="sp-conn" value="redis" /></div>
+            <div><label>Queue Names</label><input id="sp-queues" value="default" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>Max Memory (MB)</label><input id="sp-mem" type="number" value="128" min="32" /></div>
+            <div><label>Timeout (sec)</label><input id="sp-timeout" type="number" value="60" min="0" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>Max Jobs (0=∞)</label><input id="sp-maxjobs" type="number" value="0" min="0" /></div>
+            <div><label>Tries</label><input id="sp-tries" type="number" value="3" min="1" /></div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-cancel" onclick="closeModal('m-spawn')">Cancel</button>
+            <button class="btn btn-green" onclick="saveSpawnWorker()">🚀 Spawn</button>
+        </div>
+    </div>
+</div>
 
-    <script>
-        let currentSiteId = null;
-        let allSites = [];
+<!-- Edit Worker -->
+<div class="overlay" id="m-worker">
+    <div class="modal">
+        <h3>✏️ Edit Worker <span id="we-title" style="color:var(--text-muted)"></span></h3>
+        <input type="hidden" id="we-id" />
+        <label>Label</label><input id="we-label" />
+        <div class="row-2">
+            <div><label>Queue Connection</label><input id="we-conn" /></div>
+            <div><label>Queue Names</label><input id="we-queues" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>Max Memory (MB)</label><input id="we-mem" type="number" min="32" /></div>
+            <div><label>Timeout (sec)</label><input id="we-timeout" type="number" min="0" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>Max Jobs (0=∞)</label><input id="we-maxjobs" type="number" min="0" /></div>
+            <div><label>Tries</label><input id="we-tries" type="number" min="1" /></div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-cancel" onclick="closeModal('m-worker')">Cancel</button>
+            <button class="btn btn-green" onclick="saveEditWorker()">💾 Save &amp; Restart</button>
+        </div>
+    </div>
+</div>
 
-        function showToast(msg, ms = 3000) {
-            const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.classList.add('show');
-            setTimeout(() => t.classList.remove('show'), ms);
+<!-- Failed Job Detail -->
+<div class="overlay" id="m-failed">
+    <div class="modal modal-wide">
+        <h3>💀 Failed Job</h3>
+        <input type="hidden" id="fj-id" /><input type="hidden" id="fj-uuid" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.8rem;margin-bottom:0.75rem;">
+            <div><span style="color:var(--text-muted)">Job: </span><span class="mono" id="fj-name"></span></div>
+            <div><span style="color:var(--text-muted)">Queue: </span><strong id="fj-queue"></strong></div>
+            <div><span style="color:var(--text-muted)">UUID: </span><span style="font-size:0.7rem;color:var(--text-muted)" id="fj-uuid-disp"></span></div>
+            <div><span style="color:var(--text-muted)">Failed: </span><strong id="fj-at"></strong></div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.25rem;">Exception / Stack Trace</div>
+        <pre class="exc-pre" id="fj-exc"></pre>
+        <div class="modal-foot">
+            <button class="btn-cancel" onclick="closeModal('m-failed')">Close</button>
+            <button class="btn btn-amber" onclick="retryFailed()">↩️ Retry</button>
+            <button class="btn btn-red" onclick="deleteFailed()">🗑️ Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings -->
+<div class="overlay" id="m-settings">
+    <div class="modal modal-wide">
+        <h3>⚙️ Settings</h3>
+
+        <label>Max Retained Records per Site</label>
+        <input id="set-maxrec" type="number" value="10000" min="0" />
+        <p style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem;">Local SQLite job history limit per site. 0 = unlimited.</p>
+
+        <div class="section-divider">
+            <h4>📧 Email Notifications</h4>
+            <p>Get alerted when a queue job fails or an error is logged.</p>
+        </div>
+
+        <div class="toggle-row">
+            <label>Enable email notifications</label>
+            <label class="switch"><input type="checkbox" id="set-notify-enabled" /><span class="switch-track"></span></label>
+        </div>
+
+        <div class="row-2">
+            <div><label>SMTP Host</label><input id="set-smtp-host" placeholder="smtp.example.com" /></div>
+            <div><label>SMTP Port</label><input id="set-smtp-port" type="number" value="587" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>Username</label><input id="set-smtp-user" placeholder="user@example.com" /></div>
+            <div><label>Password</label><input id="set-smtp-pass" type="password" placeholder="••••••••" /></div>
+        </div>
+        <div class="row-2">
+            <div><label>From Address</label><input id="set-from-addr" placeholder="queue-watcher@example.com" /></div>
+            <div><label>From Name</label><input id="set-from-name" placeholder="Queue Watcher" /></div>
+        </div>
+        <label>Recipients <span style="font-weight:400;color:var(--text-muted)">(one per line)</span></label>
+        <textarea id="set-recipients" placeholder="admin@example.com&#10;dev@example.com"></textarea>
+
+        <div class="row-2" style="margin-top:0.75rem;">
+            <div class="toggle-row">
+                <label>Alert on job failure</label>
+                <label class="switch"><input type="checkbox" id="set-on-job" checked /><span class="switch-track"></span></label>
+            </div>
+            <div class="toggle-row">
+                <label>Alert on log error</label>
+                <label class="switch"><input type="checkbox" id="set-on-log" checked /><span class="switch-track"></span></label>
+            </div>
+        </div>
+
+        <div class="modal-foot">
+            <button class="btn-cancel" onclick="closeModal('m-settings')">Cancel</button>
+            <button class="btn btn-green" onclick="saveSettings()">💾 Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Update Check -->
+<div class="overlay" id="m-update">
+    <div class="modal">
+        <h3>🔄 Queue Watcher Updates</h3>
+        <div id="update-body" style="min-height:60px;font-size:0.85rem;margin-top:0.5rem;">Checking…</div>
+        <div class="modal-foot"><button class="btn-cancel" onclick="closeModal('m-update')">Close</button></div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ══════════ SCRIPT ══════════ -->
+<script>
+// ── State ──
+let currentSiteId = null;
+let allSites = [];
+let currentTab = 'workers';
+let jobsPage = 1;
+let failedPage = 1;
+let allFailedJobs = [];
+const PAGE = 25;
+
+// Log state
+let currentLogFile = null;
+let logPage = 1;
+let logLevel = '';
+let logSearchVal = '';
+let logSearchTimer = null;
+
+// ── Toast ──
+function toast(msg, type='', ms=3000) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (type ? ' '+type : '');
+    setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ── Modal helpers ──
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ── Escape HTML ──
+function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+// ── Format bytes ──
+function fmtBytes(n) {
+    if(n<1024) return n+'B';
+    if(n<1024*1024) return (n/1024).toFixed(1)+'KB';
+    return (n/1024/1024).toFixed(1)+'MB';
+}
+
+// ── Format ms ──
+function fmtMs(ms) {
+    if(!ms||ms<=0) return '—';
+    if(ms<1000) return ms.toFixed(0)+'ms';
+    if(ms<60000) return (ms/1000).toFixed(1)+'s';
+    return (ms/60000).toFixed(1)+'m';
+}
+
+// ── Format date (compact) ──
+function fmtDate(ts) {
+    if(!ts) return '—';
+    const d=new Date(ts);
+    return d.toLocaleDateString()+' '+d.toLocaleTimeString();
+}
+
+// ── Pagination helper ──
+function renderPager(containerId, page, totalPages, onChange) {
+    const el = document.getElementById(containerId);
+    if(!el) return;
+    if(totalPages<=1) { el.innerHTML=''; return; }
+    el.innerHTML = `
+        <button onclick="(${onChange.toString()})(${page-1})" ${page<=1?'disabled':''}>‹ Prev</button>
+        <span class="info">Page ${page} of ${totalPages}</span>
+        <button onclick="(${onChange.toString()})(${page+1})" ${page>=totalPages?'disabled':''}>Next ›</button>`;
+}
+
+// ══════════ SITE LIST ══════════
+
+async function loadSites() {
+    try {
+        const r = await fetch('/api/sites');
+        allSites = await r.json();
+        renderSiteList();
+        if(currentSiteId) {
+            const s = allSites.find(x=>x.id===currentSiteId);
+            if(s) updateSiteDetail(s);
+            else { currentSiteId=null; showEmpty(); }
         }
+    } catch(e) { console.error(e); }
+}
 
-        // ── Site List ──
+function renderSiteList() {
+    const el = document.getElementById('site-list');
+    if(!allSites.length) {
+        el.innerHTML='<div style="padding:1.5rem;font-size:0.78rem;color:var(--text-muted);text-align:center;">No sites.<br>Click "Add Site" to begin.</div>';
+        return;
+    }
+    el.innerHTML = allSites.map(s=>`
+        <div class="site-item ${s.id===currentSiteId?'active':''}" onclick="selectSite('${s.id}')">
+            <div class="name">${esc(s.name)}<span class="worker-badge">${s.worker_count}w</span></div>
+            <div class="path">${esc(s.laravel_path)}</div>
+        </div>`).join('');
+}
 
-        async function loadSites() {
-            try {
-                const res = await fetch('/api/sites');
-                allSites = await res.json();
-                renderSiteList();
+function selectSite(id) {
+    currentSiteId = id;
+    jobsPage = 1; failedPage = 1; logPage = 1;
+    currentLogFile = null;
+    const s = allSites.find(x=>x.id===id);
+    if(s) { updateSiteDetail(s); renderSiteList(); loadJobs(); loadLogFiles(); }
+}
 
-                if (currentSiteId) {
-                    const site = allSites.find(s => s.id === currentSiteId);
-                    if (site) renderSiteDetail(site);
-                    else { currentSiteId = null; showEmptyMain(); }
-                }
-            } catch (e) {
-                console.error('Failed to load sites:', e);
-            }
+function showEmpty() {
+    document.getElementById('screen-empty').style.display='flex';
+    document.getElementById('screen-site').style.display='none';
+}
+
+function updateSiteDetail(site) {
+    document.getElementById('screen-empty').style.display='none';
+    const ss = document.getElementById('screen-site');
+    ss.style.display='flex';
+
+    document.getElementById('site-title').textContent = site.name;
+    document.getElementById('info-path').textContent = site.laravel_path;
+    document.getElementById('info-branch').textContent = site.git_branch;
+    document.getElementById('s-workers').textContent = site.worker_count;
+    document.getElementById('s-deploys').textContent = site.deploy_count || 0;
+    document.getElementById('tbadge-workers').textContent = site.worker_count;
+
+    const js = site.job_stats||{};
+    document.getElementById('s-processed').textContent = js.total_processed||0;
+    document.getElementById('s-failed').textContent = js.total_failed||0;
+
+    const qm = site.queue_metrics||{};
+    document.getElementById('s-depth').textContent = qm.pending_count||0;
+    document.getElementById('s-inflight').textContent = qm.reserved_count||js.in_flight||0;
+
+    // DB status inline
+    const dbi = document.getElementById('db-status-inline');
+    if(site.db_connected) {
+        dbi.innerHTML='🔌 DB: <strong style="color:var(--green)">Connected</strong>';
+    } else if(site.db_error) {
+        dbi.innerHTML='🔌 DB: <strong style="color:var(--red)">Error</strong>';
+    } else { dbi.innerHTML=''; }
+
+    // Pending jobs
+    const pendingJobs = (qm.pending_jobs||[]).concat(qm.reserved_jobs||[]);
+    const ps = document.getElementById('pending-section');
+    if(pendingJobs.length||qm.pending_count>0) {
+        ps.style.display='block';
+        document.getElementById('pending-badge').textContent = `(${qm.pending_count||0} pending, ${qm.reserved_count||0} reserved)`;
+        document.getElementById('pending-body').innerHTML = pendingJobs.slice(0,30).map(j=>{
+            const created=new Date(j.created_at*1000);
+            const waitSec=Math.round((Date.now()-created)/1000);
+            const waitStr=waitSec>60?Math.floor(waitSec/60)+'m '+waitSec%60+'s':waitSec+'s';
+            const res=j.reserved_at!=null;
+            return `<tr>
+                <td><span class="mono">${esc(j.queue)}</span></td>
+                <td><span class="mono">${esc(j.payload_name)}</span></td>
+                <td>${j.attempts}</td>
+                <td style="font-size:0.72rem;color:var(--text-muted)">${created.toLocaleTimeString()}</td>
+                <td>${res?'<span class="jc processing">working</span>':waitStr+' ago'}</td>
+            </tr>`;
+        }).join('');
+    } else ps.style.display='none';
+
+    // Failed jobs table (from live DB)
+    renderFailedTable(qm.recent_failed||[]);
+
+    // Workers table
+    const workers = site.workers||[];
+    document.getElementById('workers-body').innerHTML = workers.length ? workers.map(w=>`
+        <tr>
+            <td>#${w.id}</td>
+            <td style="font-weight:600">${esc(w.label||'—')}</td>
+            <td><span class="mono">${esc(w.queue_connection||'')}:${esc(w.queue_names||'default')}</span></td>
+            <td>
+                <span class="ws ${w.status}"><span class="dot"></span>${w.status}</span>
+                ${w.fault_reason?`<div class="fault-msg">⚠️ ${esc(w.fault_reason)}</div>`:''}
+            </td>
+            <td>${w.current_job?`<span class="mono">${esc(w.current_job)}</span>`:'<span style="color:var(--text-muted)">idle</span>'}</td>
+            <td style="color:var(--text-muted)">${w.pid||'—'}</td>
+            <td style="color:var(--text-muted)">${w.uptime}</td>
+            <td style="color:var(--text-muted)">${w.restart_count}</td>
+            <td style="white-space:nowrap">
+                <button class="btn btn-sm btn-blue" onclick='openEditWorkerModal(${JSON.stringify(w).replace(/'/g,"&#39;")})'>✏️</button>
+                <button class="btn btn-sm btn-red" onclick="stopWorker(${w.id})">Stop</button>
+                <button class="btn btn-sm" style="background:var(--bg-card);color:var(--text-muted);border:1px solid var(--border);" onclick="deleteWorker(${w.id})">🗑️</button>
+            </td>
+        </tr>`).join('') : '<tr><td colspan="9" class="empty">No workers. Click "Spawn Worker" to start one.</td></tr>';
+}
+
+// ══════════ FAILED JOBS TABLE ══════════
+
+function renderFailedTable(jobs) {
+    allFailedJobs = jobs;
+    const sec = document.getElementById('failed-section');
+    if(!jobs.length) { sec.style.display='none'; return; }
+    sec.style.display='block';
+    const total = jobs.length;
+    const tp = Math.max(1,Math.ceil(total/PAGE));
+    if(failedPage>tp) failedPage=tp;
+    const slice = jobs.slice((failedPage-1)*PAGE, failedPage*PAGE);
+    document.getElementById('failed-badge').textContent=`(${total} total)`;
+    document.getElementById('failed-body').innerHTML = slice.map(j=>`
+        <tr style="cursor:pointer" onclick="openFailedModal(${j.id})">
+            <td style="font-size:0.72rem;color:var(--text-muted)">${esc(j.failed_at)}</td>
+            <td><span class="mono">${esc(j.queue)}</span></td>
+            <td><span class="mono">${esc(j.job_name)}</span></td>
+            <td style="font-size:0.72rem;color:var(--red);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((j.exception||'').substring(0,100))}</td>
+            <td style="white-space:nowrap">
+                <button class="btn btn-sm btn-amber" onclick="event.stopPropagation();quickRetry('${esc(j.uuid)}')">↩️</button>
+                <button class="btn btn-sm btn-red" onclick="event.stopPropagation();quickDelete('${esc(j.uuid)}')">🗑️</button>
+            </td>
+        </tr>`).join('');
+    renderPager('failed-pager', failedPage, tp, p=>{failedPage=p;renderFailedTable(allFailedJobs);});
+}
+
+// ══════════ JOB HISTORY ══════════
+
+async function loadJobs() {
+    if(!currentSiteId) return;
+    try {
+        const r = await fetch(`/api/site/jobs?site_id=${currentSiteId}&limit=${PAGE}&page=${jobsPage}`);
+        const data = await r.json();
+        const stats=data.stats||{};
+        ['h-processed','s-processed'].forEach(id=>document.getElementById(id).textContent=stats.total_processed||0);
+        ['h-failed','s-failed'].forEach(id=>document.getElementById(id).textContent=stats.total_failed||0);
+        ['h-inflight','s-inflight'].forEach(id=>document.getElementById(id).textContent=stats.in_flight||0);
+
+        // Queue performance stats
+        const qs = data.queue_stats||[];
+        const qss = document.getElementById('qstats-section');
+        if(qs.length) {
+            qss.style.display='block';
+            document.getElementById('qstats-body').innerHTML=qs.map(q=>`
+                <tr>
+                    <td><span class="mono">${esc(q.queue)}</span></td>
+                    <td style="color:var(--green);font-weight:600">${q.processed}</td>
+                    <td style="color:var(--red);font-weight:600">${q.failed}</td>
+                    <td>${fmtMs(q.avg_wait_ms)}</td>
+                    <td>${fmtMs(q.avg_exec_ms)}</td>
+                </tr>`).join('');
+        } else qss.style.display='none';
+
+        const events=data.events||[];
+        const pg=data.pagination||{};
+        const tp=pg.total_pages||1;
+        document.getElementById('jobs-body').innerHTML = events.length ? events.map(e=>`
+            <tr>
+                <td style="font-size:0.72rem;color:var(--text-muted)">${new Date(e.timestamp).toLocaleTimeString()}</td>
+                <td><span class="jc ${e.status}">${e.status}</span></td>
+                <td><span class="mono">${esc(e.queue||'')}</span></td>
+                <td><span class="mono">${esc(e.job_name)}</span></td>
+                <td style="font-size:0.72rem;color:var(--text-muted)">${fmtMs(e.wait_ms)}</td>
+                <td style="font-size:0.72rem;color:var(--text-muted)">${fmtMs(e.duration_ms)}</td>
+            </tr>`).join('') : '<tr><td colspan="6" class="empty">No jobs recorded yet.</td></tr>';
+        renderPager('jobs-pager', jobsPage, tp, p=>{jobsPage=p;loadJobs();});
+    } catch(e) { console.error(e); }
+}
+
+// ══════════ WORKER ACTIONS ══════════
+
+async function stopWorker(id) {
+    if(!confirm(`Stop worker #${id}?`)) return;
+    const r=await fetch(`/api/site/stop?site_id=${currentSiteId}&worker_id=${id}`,{method:'POST'});
+    const d=await r.json(); toast(d.message); loadSites();
+}
+async function deleteWorker(id) {
+    if(!confirm(`Delete worker #${id}?`)) return;
+    const r=await fetch(`/api/site/delete?site_id=${currentSiteId}&worker_id=${id}`,{method:'POST'});
+    const d=await r.json(); toast(d.message); loadSites();
+}
+async function triggerReload() {
+    if(!confirm('Restart ALL workers for this site?')) return;
+    const r=await fetch(`/api/site/reload?site_id=${currentSiteId}`,{method:'POST'});
+    const d=await r.json(); toast(d.message); setTimeout(loadSites,2500);
+}
+async function removeSite() {
+    const s=allSites.find(x=>x.id===currentSiteId);
+    if(!confirm(`Remove site "${s?.name}"? Workers will be stopped.`)) return;
+    const r=await fetch(`/api/sites/remove?id=${currentSiteId}`,{method:'POST'});
+    const d=await r.json(); toast(d.message); currentSiteId=null; showEmpty(); loadSites();
+}
+
+function openSpawnWorkerModal() {
+    document.getElementById('sp-label').value='';
+    document.getElementById('sp-conn').value='redis';
+    document.getElementById('sp-queues').value='default';
+    document.getElementById('sp-mem').value='128';
+    document.getElementById('sp-timeout').value='60';
+    document.getElementById('sp-maxjobs').value='0';
+    document.getElementById('sp-tries').value='3';
+    openModal('m-spawn');
+}
+async function saveSpawnWorker() {
+    const body={label:document.getElementById('sp-label').value.trim(),queue_connection:document.getElementById('sp-conn').value.trim(),queue_names:document.getElementById('sp-queues').value.trim(),max_memory_mb:+document.getElementById('sp-mem').value||128,timeout_seconds:+document.getElementById('sp-timeout').value||60,max_jobs:+document.getElementById('sp-maxjobs').value||0,tries:+document.getElementById('sp-tries').value||3};
+    const r=await fetch(`/api/site/spawn?site_id=${currentSiteId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){toast(d.message,'success');closeModal('m-spawn');loadSites();}else toast('❌ '+d.message,'error',5000);
+}
+
+function openEditWorkerModal(w) {
+    document.getElementById('we-id').value=w.id;
+    document.getElementById('we-title').textContent=`#${w.id}`;
+    document.getElementById('we-label').value=w.label||'';
+    document.getElementById('we-conn').value=w.queue_connection||'redis';
+    document.getElementById('we-queues').value=w.queue_names||'default';
+    document.getElementById('we-mem').value=w.max_memory_mb||128;
+    document.getElementById('we-timeout').value=w.timeout_seconds||60;
+    document.getElementById('we-maxjobs').value=w.max_jobs||0;
+    document.getElementById('we-tries').value=w.tries||3;
+    openModal('m-worker');
+}
+async function saveEditWorker() {
+    const body={worker_id:+document.getElementById('we-id').value,label:document.getElementById('we-label').value.trim(),queue_connection:document.getElementById('we-conn').value.trim(),queue_names:document.getElementById('we-queues').value.trim(),max_memory_mb:+document.getElementById('we-mem').value||128,timeout_seconds:+document.getElementById('we-timeout').value||60,max_jobs:+document.getElementById('we-maxjobs').value||0,tries:+document.getElementById('we-tries').value||3};
+    const r=await fetch(`/api/site/worker/edit?site_id=${currentSiteId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){toast(d.message,'success');closeModal('m-worker');loadSites();}else toast('❌ '+d.message,'error',5000);
+}
+
+// ══════════ FAILED JOB DETAIL ══════════
+
+async function openFailedModal(id) {
+    document.getElementById('fj-id').value=id;
+    document.getElementById('fj-name').textContent='Loading…';
+    document.getElementById('fj-exc').textContent='';
+    openModal('m-failed');
+    try {
+        const r=await fetch(`/api/site/failed-job/detail?site_id=${currentSiteId}&id=${id}`);
+        const j=await r.json();
+        if(!r.ok){toast('❌ '+(j.message||'Error'),'error');closeModal('m-failed');return;}
+        document.getElementById('fj-name').textContent=j.job_name;
+        document.getElementById('fj-queue').textContent=j.queue;
+        document.getElementById('fj-uuid').value=j.uuid;
+        document.getElementById('fj-uuid-disp').textContent=j.uuid;
+        document.getElementById('fj-at').textContent=j.failed_at;
+        document.getElementById('fj-exc').textContent=j.exception;
+    } catch(e){toast('Error: '+e.message,'error');closeModal('m-failed');}
+}
+async function retryFailed() {
+    const uuid=document.getElementById('fj-uuid').value;
+    if(!confirm('Push this job back onto the queue?')) return;
+    const r=await fetch(`/api/site/failed-job/retry?site_id=${currentSiteId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid})});
+    const d=await r.json();
+    if(d.success){toast(d.message,'success');closeModal('m-failed');loadSites();}else toast('❌ '+d.message,'error',5000);
+}
+async function deleteFailed() {
+    const uuid=document.getElementById('fj-uuid').value;
+    if(!confirm('Delete this failed job permanently?')) return;
+    const r=await fetch(`/api/site/failed-job/delete?site_id=${currentSiteId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid})});
+    const d=await r.json();
+    if(d.success){toast(d.message,'success');closeModal('m-failed');loadSites();}else toast('❌ '+d.message,'error',5000);
+}
+async function quickRetry(uuid) {
+    if(!confirm('Re-queue this job?')) return;
+    const r=await fetch(`/api/site/failed-job/retry?site_id=${currentSiteId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid})});
+    const d=await r.json();
+    toast(d.success?d.message:'❌ '+d.message, d.success?'success':'error');
+    if(d.success) loadSites();
+}
+async function quickDelete(uuid) {
+    if(!confirm('Delete this failed job?')) return;
+    const r=await fetch(`/api/site/failed-job/delete?site_id=${currentSiteId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid})});
+    const d=await r.json();
+    toast(d.success?d.message:'❌ '+d.message, d.success?'success':'error');
+    if(d.success) loadSites();
+}
+
+// ══════════ SITE ADD / EDIT ══════════
+
+function openAddSiteModal() {
+    ['add-path','add-name','add-workers','add-connection','add-queues','add-branch'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(id==='add-workers')el.value='2';
+        else if(id==='add-connection')el.value='redis';
+        else if(id==='add-queues')el.value='default';
+        else if(id==='add-branch')el.value='main';
+        else el.value='';
+    });
+    document.getElementById('add-vr').className='vr';
+    document.getElementById('add-vi').className='vi';
+    openModal('m-add');
+}
+async function validatePath() {
+    const path=document.getElementById('add-path').value.trim();
+    const vr=document.getElementById('add-vr'), vi=document.getElementById('add-vi');
+    if(!path){toast('Enter a path first.');return;}
+    vr.className='vr'; vi.className='vi';
+    try {
+        const r=await fetch('/api/sites/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
+        const d=await r.json();
+        if(d.valid){
+            let msg='✅ Valid Laravel project';
+            if(d.laravel_version) msg+=` (${d.laravel_version})`;
+            msg+=d.has_git?' · Git ✓':' · ⚠️ No Git';
+            vr.textContent=msg; vr.className='vr show';
+        } else { vi.textContent='❌ '+(d.errors||[]).join('; '); vi.className='vi show'; }
+    } catch(e){vi.textContent='❌ '+e.message; vi.className='vi show';}
+}
+async function addSite() {
+    const path=document.getElementById('add-path').value.trim();
+    if(!path){toast('Path is required.','error');return;}
+    const body={path,name:document.getElementById('add-name').value.trim(),worker_count:+document.getElementById('add-workers').value||2,queue_connection:document.getElementById('add-connection').value.trim(),queue_names:document.getElementById('add-queues').value.trim(),git_branch:document.getElementById('add-branch').value.trim(),db_host_env:document.getElementById('add-db-host-env').value,db_port_env:document.getElementById('add-db-port-env').value,db_database_env:document.getElementById('add-db-database-env').value,db_username_env:document.getElementById('add-db-username-env').value,db_password_env:document.getElementById('add-db-password-env').value};
+    const r=await fetch('/api/sites/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){toast(d.message,'success');closeModal('m-add');currentSiteId=d.site_id;loadSites();}else toast('❌ '+d.message,'error',5000);
+}
+function openEditSiteModal() {
+    const s=allSites.find(x=>x.id===currentSiteId); if(!s) return;
+    document.getElementById('edit-name').value=s.name||'';
+    document.getElementById('edit-branch').value=s.git_branch||'main';
+    openModal('m-edit');
+    loadEnvKeys('edit',s.laravel_path,{host:s.db_host_env||'',port:s.db_port_env||'',database:s.db_database_env||'',username:s.db_username_env||'',password:s.db_password_env||''});
+}
+async function saveEditSite() {
+    const body={id:currentSiteId,name:document.getElementById('edit-name').value.trim(),git_branch:document.getElementById('edit-branch').value.trim(),db_host_env:document.getElementById('edit-db-host-env').value,db_port_env:document.getElementById('edit-db-port-env').value,db_database_env:document.getElementById('edit-db-database-env').value,db_username_env:document.getElementById('edit-db-username-env').value,db_password_env:document.getElementById('edit-db-password-env').value};
+    const r=await fetch('/api/sites/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){toast(d.message,'success');closeModal('m-edit');loadSites();}else toast('❌ '+d.message,'error',5000);
+}
+
+// ── .env key loader ──
+async function loadEnvKeys(prefix, pathOverride, selected) {
+    const path=pathOverride||document.getElementById('add-path').value.trim();
+    if(!path){toast('Enter a project path first.','error');return;}
+    const r=await fetch('/api/sites/env-keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})});
+    const d=await r.json();
+    if(!d.keys){toast('❌ '+(d.message||'No .env found'),'error');return;}
+    const keys=d.keys.sort(), sel=selected||{};
+    ['host','port','database','username','password'].forEach(k=>{
+        const el=document.getElementById(`${prefix}-db-${k}-env`);
+        if(!el) return;
+        el.innerHTML='<option value="">— not set —</option>'+keys.map(key=>`<option value="${esc(key)}" ${key===sel[k]?'selected':''}>${esc(key)}</option>`).join('');
+    });
+    toast(`Loaded ${keys.length} .env keys`);
+}
+
+// ══════════ TABS ══════════
+
+function switchTab(name) {
+    currentTab=name;
+    ['workers','logs','mails'].forEach(t=>{
+        document.getElementById('tab-'+t).className='tab'+(t===name?' active':'');
+        document.getElementById('panel-'+t).className='tab-panel'+(t===name?' active':'');
+    });
+    if(name==='logs' && currentSiteId) loadLogFiles();
+}
+
+// ══════════ LOG VIEWER ══════════
+
+async function loadLogFiles() {
+    if(!currentSiteId) return;
+    try {
+        const r=await fetch(`/api/site/logs/files?site_id=${currentSiteId}`);
+        const d=await r.json();
+        const files=d.files||[];
+        const el=document.getElementById('log-file-list');
+
+        // Update tab badge
+        document.getElementById('tbadge-logs').textContent=files.length;
+
+        if(!files.length){
+            el.innerHTML='<div style="padding:1rem;font-size:0.78rem;color:var(--text-muted);text-align:center;">No log files found.</div>';
+            return;
         }
+        el.innerHTML=files.map(f=>`
+            <div class="log-file-item ${f.name===currentLogFile?'active':''}" onclick="selectLogFile('${esc(f.name)}')">
+                <div class="fname">${esc(f.name)}</div>
+                <div class="fmeta">${fmtBytes(f.size_bytes)} · ${new Date(f.modified).toLocaleDateString()}</div>
+            </div>`).join('');
 
-        function renderSiteList() {
-            const list = document.getElementById('site-list');
-            if (allSites.length === 0) {
-                list.innerHTML = '<div class="empty-state" style="padding:2rem;font-size:0.8rem;">No sites registered.<br>Click "Add Site" to get started.</div>';
-                return;
-            }
-            list.innerHTML = allSites.map(s => `
-                <div class="site-item ${s.id === currentSiteId ? 'active' : ''}"
-                     onclick="selectSite('${s.id}')">
-                    <div class="site-name">
-                        ${esc(s.name)}
-                        <span class="site-workers-badge">${s.worker_count} workers</span>
-                    </div>
-                    <div class="site-path">${esc(s.laravel_path)}</div>
-                </div>
-            `).join('');
+        // Auto-select first file if nothing selected
+        if(!currentLogFile && files.length) selectLogFile(files[0].name);
+    } catch(e){ console.error(e); }
+}
+
+function selectLogFile(name) {
+    currentLogFile=name;
+    logPage=1;
+    loadLogEntries();
+    // Re-render file list to show active state
+    document.querySelectorAll('.log-file-item').forEach(el=>{
+        const fname=el.querySelector('.fname')?.textContent;
+        el.classList.toggle('active', fname===name);
+    });
+}
+
+function setLevelFilter(level) {
+    logLevel=level;
+    logPage=1;
+    document.querySelectorAll('.lvl-btn').forEach(b=>{
+        const bl=b.dataset.level;
+        if(bl===level) b.className='lvl-btn active-'+(level||'ALL');
+        else b.className='lvl-btn';
+    });
+    if(!level) document.querySelector('.lvl-btn[data-level=""]').className='lvl-btn active-ALL';
+    loadLogEntries();
+}
+
+function debounceLogSearch() {
+    clearTimeout(logSearchTimer);
+    logSearchTimer=setTimeout(()=>{
+        logSearchVal=document.getElementById('log-search').value;
+        logPage=1;
+        loadLogEntries();
+    }, 350);
+}
+
+function refreshLogs() { logPage=1; loadLogFiles(); if(currentLogFile) loadLogEntries(); }
+
+async function loadLogEntries() {
+    if(!currentSiteId||!currentLogFile) return;
+    const params=new URLSearchParams({site_id:currentSiteId,file:currentLogFile,page:logPage,limit:PAGE_SIZE_LOGS});
+    if(logLevel) params.set('level',logLevel);
+    if(logSearchVal) params.set('search',logSearchVal);
+    try {
+        const r=await fetch('/api/site/logs/entries?'+params);
+        const d=await r.json();
+        if(!r.ok){document.getElementById('log-entries').innerHTML=`<div class="log-empty">❌ ${esc(d.message||'Error')}</div>`;return;}
+        renderLogEntries(d);
+    } catch(e){ document.getElementById('log-entries').innerHTML=`<div class="log-empty">Error: ${esc(e.message)}</div>`; }
+}
+
+const PAGE_SIZE_LOGS=50;
+
+function renderLogEntries(data) {
+    const entries=data.entries||[];
+    const el=document.getElementById('log-entries');
+    if(!entries.length){
+        el.innerHTML=`<div class="log-empty">No log entries${logLevel?' for level '+logLevel:''}${logSearchVal?' matching "'+esc(logSearchVal)+'"':''}.</div>`;
+        document.getElementById('log-pager').innerHTML='';
+        return;
+    }
+    el.innerHTML=entries.map((e,i)=>{
+        const ts=e.timestamp?new Date(e.timestamp).toLocaleString():'—';
+        const hasDetail=e.context||e.extra||e.message.length>120;
+        return `<div class="log-entry">
+            <div class="log-entry-head" onclick="toggleLogDetail(${i})">
+                <span class="log-ts">${ts}</span>
+                <span class="log-level ${e.level}">${e.level}</span>
+                <span class="log-channel">${esc(e.channel||'')}</span>
+                <span class="log-msg">${esc(e.message)}</span>
+                ${hasDetail?'<span class="log-chevron">▶</span>':''}
+            </div>
+            ${hasDetail?`<div class="log-entry-detail" id="led-${i}">
+                <div class="log-detail-msg">${esc(e.message)}</div>
+                ${e.context&&e.context!=='[]'?`<div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.35rem;">Context</div><pre class="log-detail-pre">${esc(e.context)}</pre>`:''}
+                ${e.extra?`<div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.35rem;">Stack Trace / Extra</div><pre class="log-detail-pre">${esc(e.extra)}</pre>`:''}
+            </div>`:''}
+        </div>`;
+    }).join('');
+    renderPager('log-pager', data.page, data.total_pages, p=>{logPage=p;loadLogEntries();});
+}
+
+function toggleLogDetail(idx) {
+    const detail=document.getElementById('led-'+idx);
+    if(!detail) return;
+    const head=detail.previousElementSibling;
+    detail.classList.toggle('show');
+    head.classList.toggle('expanded');
+}
+
+// ══════════ SETTINGS ══════════
+
+async function openSettingsModal() {
+    try {
+        const r=await fetch('/api/settings');
+        const d=await r.json();
+        document.getElementById('set-maxrec').value=d.max_retained_records??10000;
+        const n=d.notify||{};
+        document.getElementById('set-notify-enabled').checked=!!n.enabled;
+        document.getElementById('set-smtp-host').value=n.smtp_host||'';
+        document.getElementById('set-smtp-port').value=n.smtp_port||587;
+        document.getElementById('set-smtp-user').value=n.username||'';
+        document.getElementById('set-smtp-pass').value=n.password||'';
+        document.getElementById('set-from-addr').value=n.from_addr||'';
+        document.getElementById('set-from-name').value=n.from_name||'Queue Watcher';
+        document.getElementById('set-recipients').value=(n.recipients||[]).join('\n');
+        document.getElementById('set-on-job').checked=n.on_job_failed!==false;
+        document.getElementById('set-on-log').checked=n.on_log_error!==false;
+    } catch(e){}
+    openModal('m-settings');
+}
+async function saveSettings() {
+    const recipients=document.getElementById('set-recipients').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    const body={
+        max_retained_records:+document.getElementById('set-maxrec').value||0,
+        notify:{
+            enabled:document.getElementById('set-notify-enabled').checked,
+            smtp_host:document.getElementById('set-smtp-host').value.trim(),
+            smtp_port:+document.getElementById('set-smtp-port').value||587,
+            username:document.getElementById('set-smtp-user').value.trim(),
+            password:document.getElementById('set-smtp-pass').value,
+            from_addr:document.getElementById('set-from-addr').value.trim(),
+            from_name:document.getElementById('set-from-name').value.trim(),
+            recipients,
+            on_job_failed:document.getElementById('set-on-job').checked,
+            on_log_error:document.getElementById('set-on-log').checked,
         }
+    };
+    const r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){toast('Settings saved','success');closeModal('m-settings');}else toast('❌ '+d.message,'error',5000);
+}
 
-        function selectSite(id) {
-            currentSiteId = id;
-            const site = allSites.find(s => s.id === id);
-            if (site) {
-                renderSiteDetail(site);
-                renderSiteList();
-                loadJobs();
-            }
+// ══════════ VERSION / UPDATES ══════════
+
+async function loadVersionInfo() {
+    try {
+        const r=await fetch('/api/update/status');
+        const d=await r.json();
+        const el=document.getElementById('version-chip');
+        let html=`v${d.current_version||'dev'}`;
+        if(d.available_version) html+=` · <span style="color:var(--amber)">⬆ ${d.available_version}</span>`;
+        el.innerHTML=html;
+    } catch(e){}
+}
+async function checkForUpdates() {
+    document.getElementById('update-body').innerHTML='Checking for updates…';
+    openModal('m-update');
+    try {
+        const r=await fetch('/api/update/check');
+        const d=await r.json();
+        const el=document.getElementById('update-body');
+        if(d.error) { el.innerHTML=`<span style="color:var(--red)">❌ ${esc(d.error)}</span>`; return; }
+        if(d.up_to_date) {
+            el.innerHTML=`<div style="color:var(--green);font-size:1rem;margin-bottom:0.5rem;">✅ You're up to date!</div>
+                <div style="color:var(--text-muted)">Current version: <strong style="color:var(--text)">${esc(d.current_version)}</strong></div>`;
+        } else {
+            const pub=d.published_at?new Date(d.published_at).toLocaleDateString():'';
+            el.innerHTML=`<div style="color:var(--amber);font-size:1rem;margin-bottom:0.75rem;">⬆ Update available!</div>
+                <div>Current: <strong>${esc(d.current_version)}</strong></div>
+                <div>Latest: <strong style="color:var(--amber)">${esc(d.latest_version)}</strong>${pub?' — released '+esc(pub):''}</div>
+                <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted);">The auto-updater will apply this update on the next check cycle, or restart the service to update immediately.</div>`;
         }
-
-        function showEmptyMain() {
-            document.getElementById('main-empty').style.display = 'flex';
-            document.getElementById('main-content').style.display = 'none';
-        }
-
-        function renderSiteDetail(site) {
-            document.getElementById('main-empty').style.display = 'none';
-            document.getElementById('main-content').style.display = 'block';
-
-            document.getElementById('site-title').textContent = site.name;
-            document.getElementById('info-path').textContent = site.laravel_path;
-            document.getElementById('info-branch').textContent = site.git_branch;
-            document.getElementById('stat-workers').textContent = site.worker_count;
-            document.getElementById('stat-deploy-count').textContent = site.deploy_count;
-
-            // Job stats from the sites API response.
-            const js = site.job_stats || {};
-            document.getElementById('stat-jobs-processed-top').textContent = js.total_processed || 0;
-            document.getElementById('stat-jobs-failed-top').textContent = js.total_failed || 0;
-
-            // Live queue metrics from the Laravel database.
-            const qm = site.queue_metrics || {};
-            document.getElementById('stat-queue-depth').textContent = qm.pending_count || 0;
-            document.getElementById('stat-jobs-inflight-top').textContent = qm.reserved_count || js.in_flight || 0;
-
-            // DB connection status.
-            const dbBar = document.getElementById('db-status-bar');
-            const dbText = document.getElementById('db-status-text');
-            if (site.db_connected) {
-                dbBar.style.display = 'flex';
-                dbText.innerHTML = '🔌 Database: <strong style="color:var(--accent-green)">Connected</strong>';
-            } else if (site.db_error) {
-                dbBar.style.display = 'flex';
-                dbText.innerHTML = '🔌 Database: <strong style="color:var(--accent-red)">Disconnected</strong> — ' + esc(site.db_error);
-            } else {
-                dbBar.style.display = 'none';
-            }
-
-            // Render pending jobs table (from Laravel DB).
-            const pendingSection = document.getElementById('pending-jobs-section');
-            const pendingJobs = (qm.pending_jobs || []).concat(qm.reserved_jobs || []);
-            if (pendingJobs.length > 0 || (qm.pending_count > 0)) {
-                pendingSection.style.display = 'block';
-                document.getElementById('pending-count-badge').textContent = `(${qm.pending_count || 0} pending, ${qm.reserved_count || 0} in-flight)`;
-                const pendingBody = document.getElementById('pending-jobs-body');
-                pendingBody.innerHTML = pendingJobs.slice(0, 30).map(j => {
-                    const created = new Date(j.created_at * 1000);
-                    const waitMs = Date.now() - created.getTime();
-                    const waitStr = waitMs > 60000 ? Math.floor(waitMs/60000) + 'm' : Math.floor(waitMs/1000) + 's';
-                    const isReserved = j.reserved_at !== null && j.reserved_at !== undefined;
-                    return `
-                        <tr>
-                            <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent-amber)">${esc(j.queue)}</span></td>
-                            <td><span class="job-name">${esc(j.payload_name)}</span></td>
-                            <td>${j.attempts}</td>
-                            <td style="font-size:0.75rem;color:var(--text-secondary)">${created.toLocaleTimeString()}</td>
-                            <td>${isReserved ? '<span class="job-status processing">working</span>' : waitStr + ' ago'}</td>
-                        </tr>
-                    `;
-                }).join('');
-            } else {
-                pendingSection.style.display = 'none';
-            }
-
-            // Render failed jobs table (from Laravel DB).
-            const failedSection = document.getElementById('failed-jobs-section');
-            const failedJobs = qm.recent_failed || [];
-            if (failedJobs.length > 0) {
-                failedSection.style.display = 'block';
-                document.getElementById('failed-count-badge').textContent = `(${failedJobs.length} in database)`;
-                const failedBody = document.getElementById('failed-jobs-body');
-                failedBody.innerHTML = failedJobs.slice(0, 25).map(j => `
-                    <tr>
-                        <td style="font-size:0.75rem;color:var(--text-secondary)">${esc(j.failed_at)}</td>
-                        <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent-amber)">${esc(j.queue)}</span></td>
-                        <td><span class="job-name">${esc(j.job_name)}</span></td>
-                        <td style="font-size:0.7rem;color:var(--accent-red);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(j.exception)}">${esc(j.exception?.substring(0, 120) || '')}</td>
-                    </tr>
-                `).join('');
-            } else {
-                failedSection.style.display = 'none';
-            }
-
-            const tbody = document.getElementById('workers-body');
-            const workers = site.workers || [];
-            if (workers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No workers. Click "Spawn Worker" to start one.</td></tr>';
-            } else {
-                tbody.innerHTML = workers.map(w => `
-                    <tr>
-                        <td>#${w.id}</td>
-                        <td style="font-weight:600;font-size:0.8rem;">${esc(w.label || '—')}</td>
-                        <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent-amber)">${esc(w.queue_connection || '')}:${esc(w.queue_names || 'default')}</span></td>
-                        <td>
-                            <span class="worker-status ${w.status}">
-                                <span class="dot"></span>
-                                ${w.status}
-                            </span>
-                            ${w.fault_reason ? `<div class="fault-reason">⚠️ ${esc(w.fault_reason)}</div>` : ''}
-                        </td>
-                        <td>${w.current_job ? `<span class="job-name">${esc(w.current_job)}</span>` : '<span style="color:var(--text-secondary)">idle</span>'}</td>
-                        <td>${w.pid || '—'}</td>
-                        <td>${w.uptime}</td>
-                        <td>${w.restart_count}</td>
-                        <td style="white-space:nowrap">
-                            <button class="btn btn-small" style="background:var(--accent-blue);color:#fff;" onclick='openEditWorkerModal(${JSON.stringify(w).replace(/'/g, "&#39;")})'>✏️</button>
-                            <button class="btn btn-red btn-small" onclick="stopWorker(${w.id})">Stop</button>
-                            <button class="btn btn-small" style="background:#6b7280;color:#fff;" onclick="deleteWorker(${w.id})">🗑️</button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-        }
-
-        // ── Worker Actions (scoped to current site) ──
-
-        async function spawnWorker() {
-            // Called from spawn modal's save button.
-            if (!currentSiteId) return;
-            try {
-                const res = await fetch(`/api/site/spawn?site_id=${currentSiteId}`, { method: 'POST' });
-                const data = await res.json();
-                showToast(data.message);
-                loadSites();
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        // ── Spawn Worker Modal ──
-
-        function openSpawnWorkerModal() {
-            if (!currentSiteId) return;
-            document.getElementById('spawn-label').value = '';
-            document.getElementById('spawn-connection').value = 'redis';
-            document.getElementById('spawn-queues').value = 'default';
-            document.getElementById('spawn-memory').value = '128';
-            document.getElementById('spawn-timeout').value = '60';
-            document.getElementById('spawn-maxjobs').value = '0';
-            document.getElementById('spawn-tries').value = '3';
-            document.getElementById('spawn-modal-overlay').classList.add('show');
-        }
-
-        function closeSpawnWorkerModal() {
-            document.getElementById('spawn-modal-overlay').classList.remove('show');
-        }
-
-        async function saveSpawnWorker() {
-            if (!currentSiteId) return;
-
-            const body = {
-                label: document.getElementById('spawn-label').value.trim(),
-                queue_connection: document.getElementById('spawn-connection').value.trim(),
-                queue_names: document.getElementById('spawn-queues').value.trim(),
-                max_memory_mb: parseInt(document.getElementById('spawn-memory').value) || 128,
-                timeout_seconds: parseInt(document.getElementById('spawn-timeout').value) || 60,
-                max_jobs: parseInt(document.getElementById('spawn-maxjobs').value) || 0,
-                tries: parseInt(document.getElementById('spawn-tries').value) || 3,
-            };
-
-            try {
-                const res = await fetch(`/api/site/spawn?site_id=${currentSiteId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    showToast(data.message);
-                    closeSpawnWorkerModal();
-                    loadSites();
-                } else {
-                    showToast('❌ ' + data.message, 5000);
-                }
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        // ── Edit Worker Modal ──
-
-        function openEditWorkerModal(w) {
-            document.getElementById('worker-edit-id').value = w.id;
-            document.getElementById('worker-edit-title').textContent = `#${w.id}`;
-            document.getElementById('worker-edit-label').value = w.label || '';
-            document.getElementById('worker-edit-connection').value = w.queue_connection || 'redis';
-            document.getElementById('worker-edit-queues').value = w.queue_names || 'default';
-            document.getElementById('worker-edit-memory').value = w.max_memory_mb || 128;
-            document.getElementById('worker-edit-timeout').value = w.timeout_seconds || 60;
-            document.getElementById('worker-edit-maxjobs').value = w.max_jobs || 0;
-            document.getElementById('worker-edit-tries').value = w.tries || 3;
-            document.getElementById('worker-edit-modal-overlay').classList.add('show');
-        }
-
-        function closeEditWorkerModal() {
-            document.getElementById('worker-edit-modal-overlay').classList.remove('show');
-        }
-
-        async function saveEditWorker() {
-            if (!currentSiteId) return;
-
-            const body = {
-                worker_id: parseInt(document.getElementById('worker-edit-id').value),
-                label: document.getElementById('worker-edit-label').value.trim(),
-                queue_connection: document.getElementById('worker-edit-connection').value.trim(),
-                queue_names: document.getElementById('worker-edit-queues').value.trim(),
-                max_memory_mb: parseInt(document.getElementById('worker-edit-memory').value) || 128,
-                timeout_seconds: parseInt(document.getElementById('worker-edit-timeout').value) || 60,
-                max_jobs: parseInt(document.getElementById('worker-edit-maxjobs').value) || 0,
-                tries: parseInt(document.getElementById('worker-edit-tries').value) || 3,
-            };
-
-            try {
-                const res = await fetch(`/api/site/worker/edit?site_id=${currentSiteId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    showToast(data.message);
-                    closeEditWorkerModal();
-                    loadSites();
-                } else {
-                    showToast('❌ ' + data.message, 5000);
-                }
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        async function stopWorker(id) {
-            if (!currentSiteId || !confirm(`Stop worker #${id}?`)) return;
-            try {
-                const res = await fetch(`/api/site/stop?site_id=${currentSiteId}&worker_id=${id}`, { method: 'POST' });
-                const data = await res.json();
-                showToast(data.message);
-                loadSites();
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        async function deleteWorker(id) {
-            if (!currentSiteId || !confirm(`Delete worker #${id} permanently?`)) return;
-            try {
-                const res = await fetch(`/api/site/delete?site_id=${currentSiteId}&worker_id=${id}`, { method: 'POST' });
-                const data = await res.json();
-                showToast(data.message);
-                loadSites();
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        async function triggerReload() {
-            if (!currentSiteId || !confirm('Restart ALL workers for this site?')) return;
-            try {
-                const res = await fetch(`/api/site/reload?site_id=${currentSiteId}`, { method: 'POST' });
-                const data = await res.json();
-                showToast(data.message);
-                setTimeout(loadSites, 2500);
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        async function removeSite() {
-            if (!currentSiteId) return;
-            const site = allSites.find(s => s.id === currentSiteId);
-            if (!confirm(`Remove site "${site?.name}"? This will stop all its workers.`)) return;
-            try {
-                const res = await fetch(`/api/sites/remove?id=${currentSiteId}`, { method: 'POST' });
-                const data = await res.json();
-                showToast(data.message);
-                currentSiteId = null;
-                showEmptyMain();
-                loadSites();
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        // ── Edit Site Modal ──
-
-        function openEditSiteModal() {
-            if (!currentSiteId) return;
-            const site = allSites.find(s => s.id === currentSiteId);
-            if (!site) return;
-
-            document.getElementById('edit-name').value = site.name || '';
-            document.getElementById('edit-branch').value = site.git_branch || 'main';
-
-            document.getElementById('edit-modal-overlay').classList.add('show');
-
-            // Load .env keys and pre-select current mappings.
-            loadEnvKeys('edit', site.laravel_path, {
-                host: site.db_host_env || '',
-                port: site.db_port_env || '',
-                database: site.db_database_env || '',
-                username: site.db_username_env || '',
-                password: site.db_password_env || '',
-            });
-        }
-
-        function closeEditSiteModal() {
-            document.getElementById('edit-modal-overlay').classList.remove('show');
-        }
-
-        async function saveEditSite() {
-            if (!currentSiteId) return;
-
-            const body = {
-                id: currentSiteId,
-                name: document.getElementById('edit-name').value.trim(),
-                git_branch: document.getElementById('edit-branch').value.trim(),
-                db_host_env: document.getElementById('edit-db-host-env').value,
-                db_port_env: document.getElementById('edit-db-port-env').value,
-                db_database_env: document.getElementById('edit-db-database-env').value,
-                db_username_env: document.getElementById('edit-db-username-env').value,
-                db_password_env: document.getElementById('edit-db-password-env').value,
-            };
-
-            try {
-                const res = await fetch('/api/sites/edit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    showToast(data.message);
-                    closeEditSiteModal();
-                    loadSites();
-                } else {
-                    showToast('❌ ' + data.message, 5000);
-                }
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        // ── Add Site Modal ──
-
-        function openAddSiteModal() {
-            document.getElementById('modal-overlay').classList.add('show');
-            document.getElementById('validation-result').className = 'validation-result';
-            document.getElementById('validation-result').style.display = 'none';
-            document.getElementById('add-path').value = '';
-            document.getElementById('add-name').value = '';
-            document.getElementById('add-workers').value = '2';
-            document.getElementById('add-connection').value = 'redis';
-            document.getElementById('add-queues').value = 'default';
-            document.getElementById('add-branch').value = 'main';
-        }
-
-        function closeAddSiteModal() {
-            document.getElementById('modal-overlay').classList.remove('show');
-        }
-
-        async function validatePath() {
-            const path = document.getElementById('add-path').value.trim();
-            if (!path) { showToast('Enter a path first.'); return; }
-
-            const el = document.getElementById('validation-result');
-            el.textContent = 'Validating...';
-            el.className = 'validation-result';
-            el.style.display = 'block';
-
-            try {
-                const res = await fetch('/api/sites/validate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
-                });
-                const data = await res.json();
-
-                if (data.valid) {
-                    let info = '✅ Valid Laravel project';
-                    if (data.laravel_version) info += ` (laravel/framework: ${data.laravel_version})`;
-                    if (data.has_git) info += ' · Git detected';
-                    else info += ' · ⚠️ No .git directory';
-                    el.textContent = info;
-                    el.className = 'validation-result valid';
-                } else {
-                    el.textContent = '❌ ' + (data.errors || []).join('; ');
-                    el.className = 'validation-result invalid';
-                }
-            } catch (e) {
-                el.textContent = '❌ Validation request failed: ' + e.message;
-                el.className = 'validation-result invalid';
-            }
-        }
-
-        async function addSite() {
-            const path = document.getElementById('add-path').value.trim();
-            if (!path) { showToast('Project path is required.'); return; }
-
-            const body = {
-                path,
-                name: document.getElementById('add-name').value.trim(),
-                worker_count: parseInt(document.getElementById('add-workers').value) || 2,
-                queue_connection: document.getElementById('add-connection').value.trim(),
-                queue_names: document.getElementById('add-queues').value.trim(),
-                git_branch: document.getElementById('add-branch').value.trim(),
-                db_host_env: document.getElementById('add-db-host-env').value,
-                db_port_env: document.getElementById('add-db-port-env').value,
-                db_database_env: document.getElementById('add-db-database-env').value,
-                db_username_env: document.getElementById('add-db-username-env').value,
-                db_password_env: document.getElementById('add-db-password-env').value,
-            };
-
-            try {
-                const res = await fetch('/api/sites/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    showToast(data.message);
-                    closeAddSiteModal();
-                    currentSiteId = data.site_id;
-                    loadSites();
-                } else {
-                    showToast('❌ ' + data.message, 5000);
-                }
-            } catch (e) { showToast('Error: ' + e.message); }
-        }
-
-        // ── .env Key Loader ──
-
-        // loadEnvKeys fetches .env keys from the server and populates dropdowns.
-        // prefix: 'add' or 'edit' (matches HTML id prefixes).
-        // pathOverride: explicit path (for edit modal); uses the add-path input otherwise.
-        // selected: optional object { host, port, database, username, password } to pre-select.
-        async function loadEnvKeys(prefix, pathOverride, selected) {
-            const path = pathOverride || document.getElementById('add-path').value.trim();
-            if (!path) { showToast('Enter a project path first.'); return; }
-
-            try {
-                const res = await fetch('/api/sites/env-keys', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path })
-                });
-                const data = await res.json();
-
-                if (!data.keys) {
-                    showToast('❌ ' + (data.message || 'No .env found'), 5000);
-                    return;
-                }
-
-                const keys = data.keys.sort();
-                const sel = selected || {};
-
-                populateEnvSelect(`${prefix}-db-host-env`, keys, sel.host);
-                populateEnvSelect(`${prefix}-db-port-env`, keys, sel.port);
-                populateEnvSelect(`${prefix}-db-database-env`, keys, sel.database);
-                populateEnvSelect(`${prefix}-db-username-env`, keys, sel.username);
-                populateEnvSelect(`${prefix}-db-password-env`, keys, sel.password);
-
-                showToast(`Loaded ${keys.length} keys from .env`);
-            } catch (e) {
-                showToast('Error loading .env: ' + e.message);
-            }
-        }
-
-        function populateEnvSelect(selectId, keys, selectedValue) {
-            const el = document.getElementById(selectId);
-            el.innerHTML = '<option value="">— not set —</option>' +
-                keys.map(k => `<option value="${esc(k)}" ${k === selectedValue ? 'selected' : ''}>${esc(k)}</option>`).join('');
-        }
-
-        // Escape HTML to prevent XSS.
-        function esc(str) {
-            const d = document.createElement('div');
-            d.textContent = str || '';
-            return d.innerHTML;
-        }
-
-        // ── Job History ──
-
-        async function loadJobs() {
-            if (!currentSiteId) return;
-            try {
-                const res = await fetch(`/api/site/jobs?site_id=${currentSiteId}&limit=50`);
-                const data = await res.json();
-
-                // Update stats (both inline and top-level cards).
-                const stats = data.stats || {};
-                document.getElementById('stat-jobs-processed').textContent = stats.total_processed || 0;
-                document.getElementById('stat-jobs-failed').textContent = stats.total_failed || 0;
-                document.getElementById('stat-jobs-inflight').textContent = stats.in_flight || 0;
-                document.getElementById('stat-jobs-processed-top').textContent = stats.total_processed || 0;
-                document.getElementById('stat-jobs-failed-top').textContent = stats.total_failed || 0;
-                document.getElementById('stat-jobs-inflight-top').textContent = stats.in_flight || 0;
-
-                // Render queue performance stats.
-                const queueStats = data.queue_stats || [];
-                const qsSection = document.getElementById('queue-stats-section');
-                if (queueStats.length > 0) {
-                    qsSection.style.display = 'block';
-                    document.getElementById('queue-stats-body').innerHTML = queueStats.map(q => `
-                        <tr>
-                            <td><span style="font-family:monospace;font-size:0.75rem;color:var(--accent-amber)">${esc(q.queue)}</span></td>
-                            <td style="color:var(--accent-green);font-weight:600">${q.processed}</td>
-                            <td style="color:var(--accent-red);font-weight:600">${q.failed}</td>
-                            <td>${fmtMs(q.avg_wait_ms)}</td>
-                            <td>${fmtMs(q.avg_exec_ms)}</td>
-                        </tr>
-                    `).join('');
-                } else {
-                    qsSection.style.display = 'none';
-                }
-
-                // Render events table.
-                const tbody = document.getElementById('jobs-body');
-                const events = data.events || [];
-                if (events.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No jobs recorded yet. Jobs appear here in real-time as workers process them.</td></tr>';
-                } else {
-                    tbody.innerHTML = events.map(e => {
-                        const ts = new Date(e.timestamp).toLocaleTimeString();
-                        return `
-                            <tr>
-                                <td>${ts}</td>
-                                <td><span class="job-status ${e.status}">${e.status}</span></td>
-                                <td><span style="font-family:monospace;font-size:0.7rem;color:var(--accent-amber)">${esc(e.queue || '')}</span></td>
-                                <td><span class="job-name">${esc(e.job_name)}</span></td>
-                                <td style="font-size:0.75rem;color:var(--text-secondary)">${e.wait_ms ? fmtMs(e.wait_ms) : '—'}</td>
-                                <td style="font-size:0.75rem;color:var(--text-secondary)">${e.duration_ms ? fmtMs(e.duration_ms) : '—'}</td>
-                            </tr>
-                        `;
-                    }).join('');
-                }
-            } catch (e) {
-                console.error('Failed to load jobs:', e);
-            }
-        }
-
-        // Format milliseconds into a human-readable string.
-        function fmtMs(ms) {
-            if (!ms || ms <= 0) return '—';
-            if (ms < 1000) return ms.toFixed(0) + 'ms';
-            if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
-            return (ms / 60000).toFixed(1) + 'm';
-        }
-
-        // ── Auto-refresh ──
-        loadSites();
-        setInterval(() => { loadSites(); loadJobs(); }, 3000);
-    </script>
+        loadVersionInfo();
+    } catch(e){ document.getElementById('update-body').innerHTML=`<span style="color:var(--red)">❌ ${esc(e.message)}</span>`; }
+}
+
+// ══════════ AUTO-REFRESH ══════════
+loadSites();
+loadVersionInfo();
+setInterval(()=>{ loadSites(); if(currentSiteId) loadJobs(); }, 3000);
+setInterval(loadVersionInfo, 60000);
+</script>
 </body>
 </html>

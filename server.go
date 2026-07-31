@@ -8,7 +8,9 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -62,9 +64,20 @@ func (ds *DashboardServer) Run(ctx context.Context) {
 	mux.HandleFunc("/api/site/jobs", ds.handleAPISiteJobs)
 	mux.HandleFunc("/api/site/queue", ds.handleAPISiteQueue)
 	mux.HandleFunc("/api/site/worker/edit", ds.handleAPIWorkerEdit)
+	mux.HandleFunc("/api/site/failed-job/detail", ds.handleAPIFailedJobDetail)
+	mux.HandleFunc("/api/site/failed-job/delete", ds.handleAPIFailedJobDelete)
+	mux.HandleFunc("/api/site/failed-job/retry", ds.handleAPIFailedJobRetry)
+
+	// Log viewer APIs.
+	mux.HandleFunc("/api/site/logs/files", ds.handleAPILogFiles)
+	mux.HandleFunc("/api/site/logs/entries", ds.handleAPILogEntries)
 
 	// Updater API.
 	mux.HandleFunc("/api/update/status", ds.handleAPIUpdateStatus)
+	mux.HandleFunc("/api/update/check", ds.handleAPIUpdateCheck)
+
+	// Settings API.
+	mux.HandleFunc("/api/settings", ds.handleAPISettings)
 
 	ds.server = &http.Server{
 		Addr:         ds.cfg.DashboardAddr,
@@ -545,29 +558,41 @@ func (ds *DashboardServer) handleAPISiteReload(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// handleAPISiteJobs returns recent job history for a specific site.
+// handleAPISiteJobs returns paginated job history for a specific site.
 func (ds *DashboardServer) handleAPISiteJobs(w http.ResponseWriter, r *http.Request) {
 	site := ds.requireSite(w, r)
 	if site == nil {
 		return
 	}
 
-	// Default to 100 recent events; allow override via ?limit=N.
-	limit := 100
+	// Default to 25 per page; allow override via ?limit=N (max 500).
+	limit := 25
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 500 {
 		limit = n
 	}
 
+	// Page offset via ?page=N (1-based).
+	page := 1
+	if n, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && n > 1 {
+		page = n
+	}
+	offset := (page - 1) * limit
+
 	// Prefer SQLite-backed history if available; fall back to in-memory ring buffer.
 	var events []JobEvent
+	var totalCount int
 	var stats JobStats
 	var queueStats []QueueStat
 	if site.Metrics != nil {
-		events = site.Metrics.GetRecentEvents(site.Config.ID, limit)
+		events, totalCount = site.Metrics.GetPagedEvents(site.Config.ID, limit, offset)
 		stats = site.Metrics.GetStats(site.Config.ID)
 		queueStats = site.Metrics.GetQueueStats(site.Config.ID)
 	} else {
-		events = site.Manager.GetJobHistory().Recent(limit)
+		all := site.Manager.GetJobHistory().Recent(limit + offset)
+		if offset < len(all) {
+			events = all[offset:]
+		}
+		totalCount = len(all)
 		stats = site.Manager.GetJobHistory().GetStats()
 	}
 
@@ -577,11 +602,22 @@ func (ds *DashboardServer) handleAPISiteJobs(w http.ResponseWriter, r *http.Requ
 		stats.InFlight = cached.ReservedCount
 	}
 
+	totalPages := (totalCount + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"events":      events,
 		"stats":       stats,
 		"queue_stats": queueStats,
+		"pagination": map[string]interface{}{
+			"page":        page,
+			"limit":       limit,
+			"total":       totalCount,
+			"total_pages": totalPages,
+		},
 	})
 }
 
@@ -705,4 +741,244 @@ func (ds *DashboardServer) handleAPIUpdateStatus(w http.ResponseWriter, r *http.
 	}
 
 	json.NewEncoder(w).Encode(ds.updater.Status())
+}
+
+// handleAPIUpdateCheck triggers an immediate check for a newer release.
+func (ds *DashboardServer) handleAPIUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if ds.updater == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"current_version": version,
+			"up_to_date":      true,
+			"message":         "Auto-updater not configured.",
+		})
+		return
+	}
+
+	release, err := ds.updater.CheckNow()
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"current_version": version,
+			"error":           err.Error(),
+		})
+		return
+	}
+
+	latestVersion := normalizeVersion(release.TagName)
+	currentVersion := normalizeVersion(version)
+	upToDate := !isNewer(latestVersion, currentVersion)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"current_version": version,
+		"latest_version":  release.TagName,
+		"up_to_date":      upToDate,
+		"published_at":    release.Published,
+	})
+}
+
+// handleAPILogFiles lists available log files for a site.
+func (ds *DashboardServer) handleAPILogFiles(w http.ResponseWriter, r *http.Request) {
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+
+	files, err := ListLogFiles(site.Config.LaravelPath)
+	if err != nil {
+		jsonError(w, "Cannot list log files: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"files": files,
+	})
+}
+
+// handleAPILogEntries returns paginated, filtered log entries from a log file.
+func (ds *DashboardServer) handleAPILogEntries(w http.ResponseWriter, r *http.Request) {
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+
+	fileName := r.URL.Query().Get("file")
+	if fileName == "" {
+		jsonError(w, "Missing 'file' parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Sanitize: strip any path separators to prevent directory traversal.
+	for _, c := range []string{"/", "\\", ".."} {
+		if strings.Contains(fileName, c) {
+			jsonError(w, "Invalid file name", http.StatusBadRequest)
+			return
+		}
+	}
+
+	filePath := filepath.Join(site.Config.LaravelPath, "storage", "logs", fileName)
+
+	limit := 50
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 500 {
+		limit = n
+	}
+	page := 1
+	if n, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && n > 1 {
+		page = n
+	}
+
+	filterLevel := r.URL.Query().Get("level")
+	search := r.URL.Query().Get("search")
+
+	result, err := ReadLogEntries(filePath, page, limit, filterLevel, search)
+	if err != nil {
+		jsonError(w, "Cannot read log file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// handleAPISettings returns or updates global settings (including notify config).
+func (ds *DashboardServer) handleAPISettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	notify := ds.cfg.Notify
+	if notify == nil {
+		notify = DefaultNotifyConfig()
+	}
+
+	if r.Method == http.MethodGet {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"max_retained_records": ds.cfg.MaxRetainedRecords,
+			"notify":               notify,
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		MaxRetainedRecords int           `json:"max_retained_records"`
+		Notify             *NotifyConfig `json:"notify,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	if req.MaxRetainedRecords >= 0 {
+		ds.cfg.MaxRetainedRecords = req.MaxRetainedRecords
+	}
+	if req.Notify != nil {
+		ds.cfg.Notify = req.Notify
+	}
+
+	if err := ds.cfg.SaveDefault(); err != nil {
+		jsonError(w, "Failed to save config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":              true,
+		"max_retained_records": ds.cfg.MaxRetainedRecords,
+	})
+}
+
+// handleAPIFailedJobDetail returns the full exception for a failed job.
+func (ds *DashboardServer) handleAPIFailedJobDetail(w http.ResponseWriter, r *http.Request) {
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+	if site.DB == nil {
+		jsonError(w, "No database connection", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil {
+		jsonError(w, "Invalid 'id' parameter", http.StatusBadRequest)
+		return
+	}
+
+	job, err := site.DB.GetFailedJobDetail(id)
+	if err != nil {
+		jsonError(w, "Failed job not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(job)
+}
+
+// handleAPIFailedJobDelete deletes a failed job by UUID.
+func (ds *DashboardServer) handleAPIFailedJobDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+	if site.DB == nil {
+		jsonError(w, "No database connection", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UUID == "" {
+		jsonError(w, "uuid is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := site.DB.DeleteFailedJob(req.UUID); err != nil {
+		jsonError(w, "Delete failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Failed job deleted."})
+}
+
+// handleAPIFailedJobRetry re-queues a failed job by UUID.
+func (ds *DashboardServer) handleAPIFailedJobRetry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+	if site.DB == nil {
+		jsonError(w, "No database connection", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UUID == "" {
+		jsonError(w, "uuid is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := site.DB.RetryFailedJob(req.UUID); err != nil {
+		jsonError(w, "Retry failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Job pushed back onto the queue."})
 }

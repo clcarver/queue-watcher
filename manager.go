@@ -301,23 +301,49 @@ func (wm *WorkerManager) RestartAll() {
 	}
 	wm.mu.RUnlock()
 
-	// Signal all current workers to stop.
-	var wg sync.WaitGroup
+	// Mark workers as intentionally stopped so their supervise loops do not auto-restart
+	// after a graceful queue:restart exit.
 	for _, w := range workers {
-		wg.Add(1)
-		go func(worker *Worker) {
-			defer wg.Done()
-			worker.mu.Lock()
-			if worker.cancel != nil {
-				worker.cancel()
-			}
-			worker.mu.Unlock()
-		}(w)
+		w.mu.Lock()
+		w.Stopped = true
+		w.mu.Unlock()
 	}
-	wg.Wait()
 
-	// Wait briefly for processes to actually exit.
-	time.Sleep(2 * time.Second)
+	// Ask Laravel workers to gracefully stop after their current job.
+	if err := wm.triggerQueueRestart(); err != nil {
+		log.Printf("[manager] queue:restart failed; falling back to immediate cancellation: %v", err)
+	}
+
+	// Wait for workers to exit naturally; force-cancel only if they take too long.
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		allExited := true
+		for _, w := range workers {
+			w.mu.Lock()
+			running := w.Running
+			w.mu.Unlock()
+			if running {
+				allExited = false
+				break
+			}
+		}
+
+		if allExited {
+			break
+		}
+		if time.Now().After(deadline) {
+			log.Println("[manager] Graceful restart timeout reached; force-stopping remaining workers.")
+			for _, w := range workers {
+				w.mu.Lock()
+				if w.Running && w.cancel != nil {
+					w.cancel()
+				}
+				w.mu.Unlock()
+			}
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	// Clear the workers slice.
 	wm.mu.Lock()
@@ -330,6 +356,19 @@ func (wm *WorkerManager) RestartAll() {
 	}
 
 	log.Printf("[manager] Hot-reload complete. %d fresh workers spawned.", len(configs))
+}
+
+// triggerQueueRestart requests a graceful worker restart using Laravel's
+// built-in queue:restart mechanism.
+func (wm *WorkerManager) triggerQueueRestart() error {
+	cmd := exec.CommandContext(wm.ctx, wm.cfg.PHPBinary, "artisan", "queue:restart")
+	cmd.Dir = wm.cfg.LaravelPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("queue:restart failed: %w (output: %s)", err, string(output))
+	}
+	log.Printf("[manager] queue:restart issued successfully: %s", string(output))
+	return nil
 }
 
 // GetStatuses returns thread-safe snapshot of all worker statuses.

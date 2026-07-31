@@ -12,6 +12,7 @@ type Application struct {
 	sites   *SiteManager
 	server  *DashboardServer
 	updater *Updater
+	mailer  *Mailer
 	cancel  context.CancelFunc
 	ctx     context.Context
 	wg      sync.WaitGroup
@@ -21,7 +22,13 @@ type Application struct {
 func NewApplication(cfg *Config) *Application {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sites := NewSiteManager(cfg, ctx)
+	// Build mailer first so SiteManager can reference it.
+	var mailer *Mailer
+	if cfg.Notify != nil {
+		mailer = NewMailer(cfg.Notify)
+	}
+
+	sites := NewSiteManager(cfg, ctx, mailer)
 	server := NewDashboardServer(cfg, sites)
 
 	var updater *Updater
@@ -35,6 +42,7 @@ func NewApplication(cfg *Config) *Application {
 		sites:   sites,
 		server:  server,
 		updater: updater,
+		mailer:  mailer,
 		cancel:  cancel,
 		ctx:     ctx,
 	}

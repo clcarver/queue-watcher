@@ -25,18 +25,20 @@ type Site struct {
 
 // SiteManager manages multiple Laravel sites, each with independent workers.
 type SiteManager struct {
-	cfg   *Config
-	sites map[string]*Site
-	mu    sync.RWMutex
-	ctx   context.Context
+	cfg    *Config
+	sites  map[string]*Site
+	mu     sync.RWMutex
+	ctx    context.Context
+	mailer *Mailer
 }
 
 // NewSiteManager creates a new multi-site manager.
-func NewSiteManager(cfg *Config, ctx context.Context) *SiteManager {
+func NewSiteManager(cfg *Config, ctx context.Context, mailer *Mailer) *SiteManager {
 	sm := &SiteManager{
-		cfg:   cfg,
-		sites: make(map[string]*Site),
-		ctx:   ctx,
+		cfg:    cfg,
+		sites:  make(map[string]*Site),
+		ctx:    ctx,
+		mailer: mailer,
 	}
 
 	// Initialize sites from config.
@@ -232,6 +234,7 @@ func (sm *SiteManager) startSite(sc *SiteConfig) {
 
 	// Wire job events from stdout telemetry to the metrics store.
 	// This is the PRIMARY source of job lifecycle data — real-time, zero delay.
+	mailer := sm.mailer
 	if metricsStore != nil {
 		manager.OnJobEvent = func(event JobEvent) {
 			metricsStore.RecordJobEvent(sc.ID, event)
@@ -243,9 +246,15 @@ func (sm *SiteManager) startSite(sc *SiteConfig) {
 	}
 
 	// DB-diff completions serve as a BACKUP for jobs processed by external workers.
+	// Also fires email alerts for newly failed jobs discovered via DB diff.
 	if laravelDB != nil && metricsStore != nil {
 		laravelDB.OnCompletion = func(event JobEvent) {
 			metricsStore.RecordJobEvent(sc.ID, event)
+		}
+		laravelDB.OnNewFailed = func(job *FailedJob) {
+			if mailer != nil {
+				mailer.SendJobFailedAlert(sc.Name, job)
+			}
 		}
 	}
 
@@ -304,6 +313,11 @@ func (sm *SiteManager) pollLaravelDB(siteID string, site *Site) {
 					stats.TotalFailed,
 				)
 				lastSnapshot = time.Now()
+
+				// Prune old events if a max-records limit is configured.
+				if sm.cfg.MaxRetainedRecords > 0 {
+					site.Metrics.PruneByCount(siteID, sm.cfg.MaxRetainedRecords)
+				}
 			}
 		}
 	}
