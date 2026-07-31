@@ -2,7 +2,9 @@
 
 All notable changes to queue-watcher are documented in this file.
 
-## [Unreleased] - 2026-07-31
+## [Unreleased]
+
+## [0.2.1] - 2026-07-31
 
 ### Added
 - Log viewer backend and API endpoints:
@@ -29,4 +31,4 @@ All notable changes to queue-watcher are documented in this file.
 ### Fixed
 - New-failed-job detection now correctly emits notification callbacks based on the previous high-water mark.
 - Log file path handling now uses platform-safe path joining.
-
+- Processed/failed totals are now persisted in durable SQLite counters so deployment/restart cycles do not reset dashboard stats to zero.

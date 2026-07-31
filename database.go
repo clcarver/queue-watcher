@@ -521,6 +521,13 @@ func (ms *MetricsStore) migrate() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_throughput_site_ts ON throughput_snapshots(site_id, timestamp);
+
+	CREATE TABLE IF NOT EXISTS job_counters (
+		site_id TEXT PRIMARY KEY,
+		processed_count INTEGER NOT NULL DEFAULT 0,
+		failed_count INTEGER NOT NULL DEFAULT 0,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := ms.db.Exec(schema)
 	if err != nil {
@@ -548,6 +555,34 @@ func (ms *MetricsStore) RecordJobEvent(siteID string, event JobEvent) {
 	)
 	if err != nil {
 		log.Printf("[metrics] Failed to record event: %v", err)
+		return
+	}
+
+	switch event.Status {
+	case "processed":
+		_, err = ms.db.Exec(
+			`INSERT INTO job_counters (site_id, processed_count, failed_count, updated_at)
+			 VALUES (?, 1, 0, CURRENT_TIMESTAMP)
+			 ON CONFLICT(site_id) DO UPDATE SET
+			   processed_count = processed_count + 1,
+			   updated_at = CURRENT_TIMESTAMP`,
+			siteID,
+		)
+		if err != nil {
+			log.Printf("[metrics] Failed to update processed counter: %v", err)
+		}
+	case "failed":
+		_, err = ms.db.Exec(
+			`INSERT INTO job_counters (site_id, processed_count, failed_count, updated_at)
+			 VALUES (?, 0, 1, CURRENT_TIMESTAMP)
+			 ON CONFLICT(site_id) DO UPDATE SET
+			   failed_count = failed_count + 1,
+			   updated_at = CURRENT_TIMESTAMP`,
+			siteID,
+		)
+		if err != nil {
+			log.Printf("[metrics] Failed to update failed counter: %v", err)
+		}
 	}
 }
 
@@ -632,13 +667,28 @@ func (ms *MetricsStore) GetRecentEvents(siteID string, limit int) []JobEvent {
 func (ms *MetricsStore) GetStats(siteID string) JobStats {
 	var stats JobStats
 
-	ms.db.QueryRow(
-		`SELECT COUNT(*) FROM job_events WHERE site_id = ? AND status = 'processed'`, siteID,
-	).Scan(&stats.TotalProcessed)
-
-	ms.db.QueryRow(
-		`SELECT COUNT(*) FROM job_events WHERE site_id = ? AND status = 'failed'`, siteID,
-	).Scan(&stats.TotalFailed)
+	err := ms.db.QueryRow(
+		`SELECT processed_count, failed_count FROM job_counters WHERE site_id = ?`,
+		siteID,
+	).Scan(&stats.TotalProcessed, &stats.TotalFailed)
+	if err == sql.ErrNoRows {
+		// Backfill counters for existing installations that predate job_counters.
+		ms.db.QueryRow(
+			`SELECT COUNT(*) FROM job_events WHERE site_id = ? AND status = 'processed'`, siteID,
+		).Scan(&stats.TotalProcessed)
+		ms.db.QueryRow(
+			`SELECT COUNT(*) FROM job_events WHERE site_id = ? AND status = 'failed'`, siteID,
+		).Scan(&stats.TotalFailed)
+		_, _ = ms.db.Exec(
+			`INSERT INTO job_counters (site_id, processed_count, failed_count, updated_at)
+			 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+			 ON CONFLICT(site_id) DO UPDATE SET
+			   processed_count = excluded.processed_count,
+			   failed_count = excluded.failed_count,
+			   updated_at = CURRENT_TIMESTAMP`,
+			siteID, stats.TotalProcessed, stats.TotalFailed,
+		)
+	}
 
 	return stats
 }
