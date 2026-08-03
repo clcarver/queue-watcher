@@ -29,6 +29,7 @@ Copy `queue-watcher.example.json` → `queue-watcher.json` next to the exe:
   "update": {
     "enabled": true,
     "repository": "clcarver/queue-watcher",
+    "companion_repository": "clcarver/queue-watcher-laravel",
     "check_interval": 3600000000000
   },
   "sites": [
@@ -81,9 +82,12 @@ When `update.enabled` is `true` in config, the service:
 
 1. Checks GitHub Releases every `check_interval` (default: 1 hour)
 2. Compares the latest release tag against its built-in version
-3. Downloads the new binary if newer
-4. Replaces itself (rename trick for Windows) and exits
-5. Windows SCM auto-restarts the service with the new version
+3. Verifies the companion repository tag (default: `clcarver/queue-watcher-laravel`) matches the release tag
+4. Downloads the new binary if newer and compatible
+5. Replaces itself (rename trick for Windows) and exits
+6. Windows SCM auto-restarts the service with the new version
+
+From the dashboard **Updates** button, you can also click **Update Now** to apply a compatible update immediately instead of waiting for the next interval.
 
 ### Manual Update
 

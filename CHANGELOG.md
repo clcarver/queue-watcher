@@ -4,6 +4,16 @@ All notable changes to queue-watcher are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-03
+
+### Added
+- Update compatibility gating with a companion repository tag check (`clcarver/queue-watcher-laravel` by default) before applying queue-watcher updates.
+- Dashboard/API support for immediate updates via `POST /api/update/apply` and an **Update Now** button.
+
+### Changed
+- Git hot-reload detection now ignores fetch-only ref updates and triggers on local branch updates after pull/merge.
+- Auto-updater and CLI manual update now enforce companion tag compatibility before applying updates.
+
 ## [0.2.2] - 2026-07-31
 
 ### Fixed

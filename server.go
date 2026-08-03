@@ -75,6 +75,7 @@ func (ds *DashboardServer) Run(ctx context.Context) {
 	// Updater API.
 	mux.HandleFunc("/api/update/status", ds.handleAPIUpdateStatus)
 	mux.HandleFunc("/api/update/check", ds.handleAPIUpdateCheck)
+	mux.HandleFunc("/api/update/apply", ds.handleAPIUpdateApply)
 
 	// Settings API.
 	mux.HandleFunc("/api/settings", ds.handleAPISettings)
@@ -150,15 +151,15 @@ type SiteStatusData struct {
 	TimeoutSeconds  int            `json:"timeout_seconds"`
 	MaxJobs         int            `json:"max_jobs"`
 	// Live queue metrics from the Laravel database.
-	QueueMetrics    *QueueMetrics  `json:"queue_metrics,omitempty"`
-	DBConnected     bool           `json:"db_connected"`
-	DBError         string         `json:"db_error,omitempty"`
+	QueueMetrics *QueueMetrics `json:"queue_metrics,omitempty"`
+	DBConnected  bool          `json:"db_connected"`
+	DBError      string        `json:"db_error,omitempty"`
 	// Configured .env key mappings for DB connection.
-	DBHostEnv       string         `json:"db_host_env,omitempty"`
-	DBPortEnv       string         `json:"db_port_env,omitempty"`
-	DBDatabaseEnv   string         `json:"db_database_env,omitempty"`
-	DBUsernameEnv   string         `json:"db_username_env,omitempty"`
-	DBPasswordEnv   string         `json:"db_password_env,omitempty"`
+	DBHostEnv     string `json:"db_host_env,omitempty"`
+	DBPortEnv     string `json:"db_port_env,omitempty"`
+	DBDatabaseEnv string `json:"db_database_env,omitempty"`
+	DBUsernameEnv string `json:"db_username_env,omitempty"`
+	DBPasswordEnv string `json:"db_password_env,omitempty"`
 }
 
 // handleAPISites returns JSON list of all sites with their worker statuses.
@@ -430,14 +431,14 @@ func (ds *DashboardServer) handleAPIWorkerEdit(w http.ResponseWriter, r *http.Re
 	}
 
 	var req struct {
-		WorkerID       int    `json:"worker_id"`
-		Label          string `json:"label"`
+		WorkerID        int    `json:"worker_id"`
+		Label           string `json:"label"`
 		QueueConnection string `json:"queue_connection"`
-		QueueNames     string `json:"queue_names"`
-		MaxMemoryMB    int    `json:"max_memory_mb"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
-		MaxJobs        int    `json:"max_jobs"`
-		Tries          int    `json:"tries"`
+		QueueNames      string `json:"queue_names"`
+		MaxMemoryMB     int    `json:"max_memory_mb"`
+		TimeoutSeconds  int    `json:"timeout_seconds"`
+		MaxJobs         int    `json:"max_jobs"`
+		Tries           int    `json:"tries"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -756,7 +757,7 @@ func (ds *DashboardServer) handleAPIUpdateCheck(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	release, err := ds.updater.CheckNow()
+	preview, err := ds.updater.PreviewUpdate()
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"current_version": version,
@@ -765,15 +766,51 @@ func (ds *DashboardServer) handleAPIUpdateCheck(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	latestVersion := normalizeVersion(release.TagName)
-	currentVersion := normalizeVersion(version)
-	upToDate := !isNewer(latestVersion, currentVersion)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"current_version":      preview.CurrentVersion,
+		"latest_version":       preview.LatestVersion,
+		"up_to_date":           preview.UpToDate,
+		"can_update":           preview.CanUpdate,
+		"published_at":         preview.PublishedAt,
+		"companion_repository": preview.CompanionRepository,
+		"companion_tag":        preview.CompanionTag,
+		"compatibility_reason": preview.CompatibilityReason,
+	})
+}
+
+// handleAPIUpdateApply forces an immediate update when one is available.
+func (ds *DashboardServer) handleAPIUpdateApply(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if ds.updater == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Auto-updater not configured.",
+		})
+		return
+	}
+
+	result, err := ds.updater.ApplyUpdateNow()
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"current_version": version,
-		"latest_version":  release.TagName,
-		"up_to_date":      upToDate,
-		"published_at":    release.Published,
+		"success":       result.Updated,
+		"update_ready":  result.UpdateReady,
+		"current":       result.Current,
+		"latest":        result.Latest,
+		"companion_tag": result.CompanionTag,
+		"message":       result.Message,
 	})
 }
 

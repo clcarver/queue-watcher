@@ -610,7 +610,10 @@
     <div class="modal">
         <h3>🔄 Queue Watcher Updates</h3>
         <div id="update-body" style="min-height:60px;font-size:0.85rem;margin-top:0.5rem;">Checking…</div>
-        <div class="modal-foot"><button class="btn-cancel" onclick="closeModal('m-update')">Close</button></div>
+        <div class="modal-foot">
+            <button class="btn btn-green" id="btn-update-now" style="display:none;" onclick="updateNow()">⬆ Update Now</button>
+            <button class="btn-cancel" onclick="closeModal('m-update')">Close</button>
+        </div>
     </div>
 </div>
 
@@ -1226,6 +1229,7 @@ async function loadVersionInfo() {
 }
 async function checkForUpdates() {
     document.getElementById('update-body').innerHTML='Checking for updates…';
+    document.getElementById('btn-update-now').style.display='none';
     openModal('m-update');
     try {
         const r=await fetch('/api/update/check');
@@ -1237,13 +1241,42 @@ async function checkForUpdates() {
                 <div style="color:var(--text-muted)">Current version: <strong style="color:var(--text)">${esc(d.current_version)}</strong></div>`;
         } else {
             const pub=d.published_at?new Date(d.published_at).toLocaleDateString():'';
+            const companion = d.companion_repository ? `<div style="margin-top:0.5rem;color:var(--text-muted)">Companion ${esc(d.companion_repository)} tag: <strong style="color:var(--text)">${esc(d.companion_tag||'—')}</strong></div>` : '';
+            if(d.can_update) {
+                document.getElementById('btn-update-now').style.display='inline-flex';
+            }
             el.innerHTML=`<div style="color:var(--amber);font-size:1rem;margin-bottom:0.75rem;">⬆ Update available!</div>
                 <div>Current: <strong>${esc(d.current_version)}</strong></div>
                 <div>Latest: <strong style="color:var(--amber)">${esc(d.latest_version)}</strong>${pub?' — released '+esc(pub):''}</div>
-                <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted);">The auto-updater will apply this update on the next check cycle, or restart the service to update immediately.</div>`;
+                ${companion}
+                ${d.can_update ? `<div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-muted);">Click <strong>Update Now</strong> to apply immediately.</div>` : `<div style="margin-top:0.75rem;font-size:0.78rem;color:var(--red)">⚠ ${esc(d.compatibility_reason||'Update is currently blocked by compatibility checks.')}</div>`}`;
         }
         loadVersionInfo();
     } catch(e){ document.getElementById('update-body').innerHTML=`<span style="color:var(--red)">❌ ${esc(e.message)}</span>`; }
+}
+
+async function updateNow() {
+    const btn=document.getElementById('btn-update-now');
+    const body=document.getElementById('update-body');
+    btn.disabled=true;
+    body.innerHTML='<div>Applying update…</div>';
+    try {
+        const r=await fetch('/api/update/apply',{method:'POST'});
+        const d=await r.json();
+        if(!d.success){
+            body.innerHTML=`<span style="color:var(--red)">❌ ${esc(d.message||'Update failed')}</span>`;
+            btn.style.display='none';
+            return;
+        }
+        body.innerHTML=`<div style="color:var(--green);font-size:1rem;margin-bottom:0.5rem;">✅ Update started</div>
+            <div style="color:var(--text-muted)">${esc(d.message||'Update request accepted.')}</div>`;
+        btn.style.display='none';
+        loadVersionInfo();
+    } catch(e){
+        body.innerHTML=`<span style="color:var(--red)">❌ ${esc(e.message)}</span>`;
+    } finally {
+        btn.disabled=false;
+    }
 }
 
 // ══════════ AUTO-REFRESH ══════════

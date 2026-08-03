@@ -6,6 +6,7 @@
   "update": {
     "enabled": true,
     "repository": "clcarver/queue-watcher",
+    "companion_repository": "clcarver/queue-watcher-laravel",
     "check_interval": 3600000000000
   },
   "sites": [

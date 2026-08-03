@@ -107,34 +107,28 @@ func runUpdate() {
 	fmt.Printf("Current version: %s\n", version)
 	fmt.Printf("Checking %s for updates...\n", cfg.Update.Repository)
 
-	release, err := updater.CheckNow()
+	preview, err := updater.PreviewUpdate()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	latestVersion := normalizeVersion(release.TagName)
-	currentVersion := normalizeVersion(version)
-
-	if !isNewer(latestVersion, currentVersion) {
+	if preview.UpToDate {
 		fmt.Printf("Already up to date (%s)\n", version)
 		return
 	}
 
-	fmt.Printf("New version available: %s\n", release.TagName)
-
-	asset := updater.findAsset(release)
-	if asset == nil {
-		fmt.Println("Error: no compatible binary found in release assets")
+	fmt.Printf("New version available: %s\n", preview.LatestVersion)
+	if !preview.CanUpdate {
+		fmt.Printf("Update blocked: %s\n", preview.CompatibilityReason)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Downloading %s...\n", asset.Name)
-	if err := updater.downloadAndApply(asset); err != nil {
+	result, err := updater.ApplyUpdateNow()
+	if err != nil {
 		fmt.Printf("Update failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Update applied successfully! Restart the service to use the new version.")
+	fmt.Println(result.Message)
 }
-

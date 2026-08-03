@@ -115,10 +115,9 @@ func (gw *GitWatcher) checkForChanges() {
 func (gw *GitWatcher) computeHash() string {
 	hasher := sha256.New()
 
-	// Files that change when code is updated via git pull.
+	// Files that change when local checked-out code changes after pull/merge.
 	watchFiles := []string{
 		filepath.Join(gw.cfg.LaravelPath, ".git", "refs", "heads", gw.cfg.GitBranch),
-		filepath.Join(gw.cfg.LaravelPath, ".git", "FETCH_HEAD"),
 		filepath.Join(gw.cfg.LaravelPath, ".git", "HEAD"),
 		filepath.Join(gw.cfg.LaravelPath, ".git", "ORIG_HEAD"),
 	}

@@ -12,13 +12,13 @@ import (
 
 // WorkerConfig holds per-worker artisan command settings.
 type WorkerConfig struct {
-	Label          string `json:"label"`           // Human label, e.g. "Mail Worker"
+	Label           string `json:"label"`            // Human label, e.g. "Mail Worker"
 	QueueConnection string `json:"queue_connection"` // e.g. "redis", "database"
-	QueueNames     string `json:"queue_names"`      // e.g. "default", "mail,notifications"
-	MaxMemoryMB    int    `json:"max_memory_mb"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-	MaxJobs        int    `json:"max_jobs"`
-	Tries          int    `json:"tries"`
+	QueueNames      string `json:"queue_names"`      // e.g. "default", "mail,notifications"
+	MaxMemoryMB     int    `json:"max_memory_mb"`
+	TimeoutSeconds  int    `json:"timeout_seconds"`
+	MaxJobs         int    `json:"max_jobs"`
+	Tries           int    `json:"tries"`
 }
 
 // SiteConfig holds per-site configuration for a single Laravel project.
@@ -119,14 +119,14 @@ type Config struct {
 // DefaultConfig returns a configuration with sensible production defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		PHPBinary:       `php`,
-		RestartDelay:    2 * time.Second,
-		GitPollInterval: 10 * time.Second,
-		DashboardAddr:   "127.0.0.1:9100",
-		Update:          DefaultUpdateConfig(),
-		Notify:          DefaultNotifyConfig(),
+		PHPBinary:          `php`,
+		RestartDelay:       2 * time.Second,
+		GitPollInterval:    10 * time.Second,
+		DashboardAddr:      "127.0.0.1:9100",
+		Update:             DefaultUpdateConfig(),
+		Notify:             DefaultNotifyConfig(),
 		MaxRetainedRecords: 10000,
-		Sites:           []*SiteConfig{},
+		Sites:              []*SiteConfig{},
 	}
 }
 
@@ -147,9 +147,9 @@ func (c *Config) ConfigForSite(site *SiteConfig) *Config {
 		GitPollInterval: c.GitPollInterval,
 		DashboardAddr:   c.DashboardAddr,
 		// Per-site overrides used by WorkerManager/GitWatcher.
-		LaravelPath:     site.LaravelPath,
-		GitBranch:       site.GitBranch,
-		WorkerCount:     len(site.Workers),
+		LaravelPath: site.LaravelPath,
+		GitBranch:   site.GitBranch,
+		WorkerCount: len(site.Workers),
 	}
 }
 
@@ -244,6 +244,9 @@ func LoadConfig() (*Config, error) {
 	// Ensure update config exists (may be nil if JSON has "update": null).
 	if cfg.Update == nil {
 		cfg.Update = DefaultUpdateConfig()
+	}
+	if cfg.Update.CompanionRepository == "" {
+		cfg.Update.CompanionRepository = DefaultUpdateConfig().CompanionRepository
 	}
 
 	// Enforce minimums on all sites and migrate legacy configs.
