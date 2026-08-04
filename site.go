@@ -197,6 +197,12 @@ func (sm *SiteManager) StopAll() {
 
 	for _, s := range sites {
 		s.Manager.StopAll()
+		if s.Metrics != nil {
+			s.Metrics.Close()
+		}
+		if s.DB != nil {
+			s.DB.Close()
+		}
 	}
 }
 

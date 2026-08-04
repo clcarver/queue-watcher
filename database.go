@@ -839,9 +839,11 @@ func (ms *MetricsStore) PruneOldData(retention time.Duration) {
 	ms.db.Exec(`DELETE FROM throughput_snapshots WHERE timestamp < ?`, cutoff)
 }
 
-// Close closes the SQLite database.
+// Close checkpoints the WAL and closes the SQLite database.
 func (ms *MetricsStore) Close() {
 	if ms.db != nil {
+		// Force a WAL checkpoint so all data is in the main DB file.
+		ms.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 		ms.db.Close()
 	}
 }
