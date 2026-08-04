@@ -2,6 +2,16 @@
 
 All notable changes to queue-watcher are documented in this file.
 
+## [0.2.6] - 2026-08-04
+
+### Fixed
+- MetricsStore now properly closed on shutdown with WAL checkpoint (`PRAGMA wal_checkpoint(TRUNCATE)`) to prevent stat loss during manual updates.
+- `StopAll()` now uses `php artisan queue:restart` semantics — waits for running jobs to complete (up to 90s) before force-killing workers.
+
+### Added
+- "Stop Service" button on the dashboard sidebar for graceful shutdown without needing PowerShell/sc.exe.
+- `POST /api/service/stop` endpoint triggers graceful shutdown (stops workers, checkpoints DB, exits).
+
 ## [0.2.5] - 2026-08-04
 
 ### Changed

@@ -19,11 +19,12 @@ var embeddedFS embed.FS
 
 // DashboardServer provides a web-based control panel for the queue watcher.
 type DashboardServer struct {
-	cfg     *Config
-	sites   *SiteManager
-	updater *Updater
-	tmpl    *template.Template
-	server  *http.Server
+	cfg        *Config
+	sites      *SiteManager
+	updater    *Updater
+	tmpl       *template.Template
+	server     *http.Server
+	OnShutdown func() // Called when the user requests a service stop via the dashboard.
 }
 
 // NewDashboardServer creates a new dashboard HTTP server.
@@ -76,6 +77,9 @@ func (ds *DashboardServer) Run(ctx context.Context) {
 	mux.HandleFunc("/api/update/status", ds.handleAPIUpdateStatus)
 	mux.HandleFunc("/api/update/check", ds.handleAPIUpdateCheck)
 	mux.HandleFunc("/api/update/apply", ds.handleAPIUpdateApply)
+
+	// Service control API.
+	mux.HandleFunc("/api/service/stop", ds.handleAPIServiceStop)
 
 	// Settings API.
 	mux.HandleFunc("/api/settings", ds.handleAPISettings)
@@ -812,6 +816,39 @@ func (ds *DashboardServer) handleAPIUpdateApply(w http.ResponseWriter, r *http.R
 		"companion_tag": result.CompanionTag,
 		"message":       result.Message,
 	})
+}
+
+// handleAPIServiceStop initiates a graceful service shutdown from the dashboard.
+func (ds *DashboardServer) handleAPIServiceStop(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if ds.OnShutdown == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Shutdown handler not configured.",
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Service is shutting down gracefully...",
+	})
+
+	// Flush response before initiating shutdown.
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		ds.OnShutdown()
+	}()
 }
 
 // handleAPILogFiles lists available log files for a site.

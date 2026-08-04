@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"sync"
 )
 
@@ -37,7 +38,7 @@ func NewApplication(cfg *Config) *Application {
 		server.updater = updater
 	}
 
-	return &Application{
+	app := &Application{
 		cfg:     cfg,
 		sites:   sites,
 		server:  server,
@@ -46,6 +47,15 @@ func NewApplication(cfg *Config) *Application {
 		cancel:  cancel,
 		ctx:     ctx,
 	}
+
+	// Wire the dashboard's shutdown button to a graceful stop.
+	server.OnShutdown = func() {
+		log.Println("[app] Shutdown requested via dashboard.")
+		app.Stop()
+		os.Exit(0)
+	}
+
+	return app
 }
 
 // Start launches the dashboard HTTP server and auto-updater.

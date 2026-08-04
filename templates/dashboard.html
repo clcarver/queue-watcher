@@ -251,6 +251,7 @@
             <button class="btn-sidebar" style="flex:1" onclick="openSettingsModal()">⚙️ Settings</button>
             <button class="btn-sidebar" style="flex:1" onclick="checkForUpdates()">🔄 Updates</button>
         </div>
+        <button class="btn-sidebar" style="background:var(--red);color:#fff;" onclick="confirmStopService()">⏹ Stop Service</button>
         <div class="version-chip" id="version-chip">—</div>
     </div>
 </div>
@@ -1276,6 +1277,21 @@ async function updateNow() {
         body.innerHTML=`<span style="color:var(--red)">❌ ${esc(e.message)}</span>`;
     } finally {
         btn.disabled=false;
+    }
+}
+
+async function confirmStopService() {
+    if (!confirm('Are you sure you want to stop the Queue Watcher service?\n\nAll workers will be stopped gracefully and the dashboard will become unavailable.')) return;
+    try {
+        const r = await fetch('/api/service/stop', {method:'POST'});
+        const d = await r.json();
+        if (d.success) {
+            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;"><div style="text-align:center;"><h2>⏹ Service Stopped</h2><p>Queue Watcher has shut down gracefully.<br>You may now perform a manual update.</p></div></div>';
+        } else {
+            alert('Failed: ' + (d.message || 'Unknown error'));
+        }
+    } catch(e) {
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;"><div style="text-align:center;"><h2>⏹ Service Stopped</h2><p>Queue Watcher has shut down gracefully.<br>You may now perform a manual update.</p></div></div>';
     }
 }
 

@@ -247,39 +247,67 @@ func (wm *WorkerManager) DeleteWorker(id int) bool {
 }
 
 // StopAll gracefully terminates all active workers and waits for them to exit.
+// Uses php artisan queue:restart to let current jobs finish before force-killing.
 func (wm *WorkerManager) StopAll() {
-	log.Println("[manager] Stopping all workers...")
+	log.Println("[manager] Stopping all workers gracefully...")
 
 	wm.mu.RLock()
 	workers := make([]*Worker, len(wm.workers))
 	copy(workers, wm.workers)
 	wm.mu.RUnlock()
 
-	var wg sync.WaitGroup
+	// Mark all workers as stopped so supervise loops don't restart them.
 	for _, w := range workers {
-		wg.Add(1)
-		go func(worker *Worker) {
-			defer wg.Done()
-			worker.mu.Lock()
-			if worker.cancel != nil {
-				worker.cancel()
-			}
-			worker.mu.Unlock()
-		}(w)
+		w.mu.Lock()
+		w.Stopped = true
+		w.mu.Unlock()
 	}
 
-	// Wait for all cancel signals to be sent, with timeout.
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
+	// Ask Laravel workers to stop after their current job finishes.
+	if err := wm.triggerQueueRestart(); err != nil {
+		log.Printf("[manager] queue:restart failed; falling back to immediate cancellation: %v", err)
+		for _, w := range workers {
+			w.mu.Lock()
+			if w.cancel != nil {
+				w.cancel()
+			}
+			w.mu.Unlock()
+		}
+		time.Sleep(2 * time.Second)
+		return
+	}
 
-	select {
-	case <-done:
-		log.Println("[manager] All workers signaled to stop.")
-	case <-time.After(30 * time.Second):
-		log.Println("[manager] Timeout waiting for workers to stop.")
+	// Wait for workers to exit naturally; force-cancel only after timeout.
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		allExited := true
+		for _, w := range workers {
+			w.mu.Lock()
+			running := w.Running
+			w.mu.Unlock()
+			if running {
+				allExited = false
+				break
+			}
+		}
+
+		if allExited {
+			log.Println("[manager] All workers exited gracefully.")
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Println("[manager] Graceful stop timeout (90s); force-killing remaining workers.")
+			for _, w := range workers {
+				w.mu.Lock()
+				if w.Running && w.cancel != nil {
+					w.cancel()
+				}
+				w.mu.Unlock()
+			}
+			time.Sleep(2 * time.Second)
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
