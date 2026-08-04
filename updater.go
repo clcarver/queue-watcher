@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
@@ -500,9 +501,13 @@ func (u *Updater) downloadAndApply(asset *ghAsset) error {
 // 2) waits for this process to fully exit
 // 3) swaps binaries
 // 4) restarts the service
+//
+// The helper is fully detached from this process tree so that the SCM
+// terminating the service does not kill the helper.
 func (u *Updater) stageServiceUpdate(exePath, tmpPath string) error {
 	oldPath := exePath + ".old"
 	currentPID := os.Getpid()
+	logPath := filepath.Join(filepath.Dir(exePath), "update-log.txt")
 
 	script := fmt.Sprintf(`
 $ErrorActionPreference = 'Stop'
@@ -511,28 +516,73 @@ $pidToWait = %d
 $exe = '%s'
 $tmp = '%s'
 $old = '%s'
+$logFile = '%s'
 
-sc.exe stop $service | Out-Null
-
-for ($i = 0; $i -lt 240; $i++) {
-    Start-Sleep -Milliseconds 500
-    if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) { break }
+function Write-Log($msg) {
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    "$ts  $msg" | Out-File -Append -FilePath $logFile -Encoding utf8
 }
 
+Write-Log "=== Self-update helper started ==="
+Write-Log "Service: $service | PID to wait: $pidToWait"
+
+# Stop the service.
+Write-Log "Stopping service '$service'..."
+$stopResult = sc.exe stop $service 2>&1
+Write-Log "sc.exe stop result: $stopResult"
+
+# Wait for the service process to fully exit.
+Write-Log "Waiting for process $pidToWait to exit..."
+$exited = $false
+for ($i = 0; $i -lt 240; $i++) {
+    Start-Sleep -Milliseconds 500
+    if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) {
+        $exited = $true
+        break
+    }
+}
+if (-not $exited) {
+    Write-Log "ERROR: Process $pidToWait did not exit within 120 seconds. Aborting."
+    exit 1
+}
+Write-Log "Process exited after $([math]::Round($i * 0.5, 1))s."
+
+# Swap binaries with retries.
+Write-Log "Swapping binaries..."
+$swapped = $false
 for ($i = 0; $i -lt 40; $i++) {
     try {
         Remove-Item -Force $old -ErrorAction SilentlyContinue
-        Move-Item -Force $exe $old
-        Move-Item -Force $tmp $exe
+        Move-Item -Force $exe $old -ErrorAction Stop
+        Move-Item -Force $tmp $exe -ErrorAction Stop
+        $swapped = $true
         break
     } catch {
-        if ($i -ge 39) { throw }
+        if ($i -ge 39) {
+            Write-Log "ERROR: Failed to swap binaries after 40 attempts: $_"
+            exit 1
+        }
         Start-Sleep -Milliseconds 500
     }
 }
+Write-Log "Binary swap complete."
 
-sc.exe start $service | Out-Null
-`, escapeSingle(serviceName), currentPID, escapeSingle(exePath), escapeSingle(tmpPath), escapeSingle(oldPath))
+# Start the service.
+Write-Log "Starting service '$service'..."
+$startResult = sc.exe start $service 2>&1
+Write-Log "sc.exe start result: $startResult"
+
+# Verify the service started.
+Start-Sleep -Seconds 2
+$query = sc.exe query $service 2>&1
+if ($query -match 'RUNNING') {
+    Write-Log "Service '$service' is RUNNING. Update successful."
+} else {
+    Write-Log "WARNING: Service may not be running. sc query output: $query"
+}
+
+Write-Log "=== Self-update helper finished ==="
+`, escapeSingle(serviceName), currentPID, escapeSingle(exePath), escapeSingle(tmpPath), escapeSingle(oldPath), escapeSingle(logPath))
 
 	cmd := exec.Command(
 		"powershell",
@@ -541,11 +591,21 @@ sc.exe start $service | Out-Null
 		"-ExecutionPolicy", "Bypass",
 		"-Command", script,
 	)
+
+	// Detach the helper from this process tree so that SCM termination of the
+	// service does not cascade-kill the update helper.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | 0x00000008, // CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
+	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to launch service update helper: %w", err)
 	}
 
-	log.Printf("[updater] Service update helper started (pid=%d).", cmd.Process.Pid)
+	// Release the process handle so it is fully independent.
+	cmd.Process.Release()
+
+	log.Printf("[updater] Service update helper launched (detached). Log at %s", logPath)
 	return nil
 }
 

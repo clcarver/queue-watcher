@@ -2,7 +2,15 @@
 
 All notable changes to queue-watcher are documented in this file.
 
-## [Unreleased]
+## [0.2.4] - 2026-08-04
+
+### Fixed
+- Self-update helper process is now fully detached from the service process tree (uses `CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS`) so the SCM cannot kill it when terminating the service.
+- Helper now aborts if the service process does not exit within the timeout instead of blindly proceeding.
+- Binary swap uses proper `Move-Item -Force` with error propagation.
+
+### Added
+- Internal update log (`update-log.txt`) written by the helper recording: service stop, process exit wait, binary swap, service start, and running verification with timestamps.
 
 ## [0.2.3] - 2026-08-03
 
