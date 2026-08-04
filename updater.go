@@ -24,6 +24,7 @@ type UpdateConfig struct {
 	Repository          string        `json:"repository"`                     // e.g. "ccarver/queue-watcher"
 	CheckInterval       time.Duration `json:"check_interval"`                 // how often to check for updates
 	CompanionRepository string        `json:"companion_repository,omitempty"` // e.g. "ccarver/queue-watcher-laravel"
+	CompanionRequires   string        `json:"companion_requires,omitempty"`   // semver constraint e.g. ">=1.0.0 <2.0.0"
 }
 
 // DefaultUpdateConfig returns sensible defaults for auto-update.
@@ -33,6 +34,7 @@ func DefaultUpdateConfig() *UpdateConfig {
 		Repository:          "clcarver/queue-watcher",
 		CheckInterval:       1 * time.Hour,
 		CompanionRepository: "clcarver/queue-watcher-laravel",
+		CompanionRequires:   ">=1.0.0 <2.0.0",
 	}
 }
 
@@ -312,7 +314,7 @@ func (u *Updater) PreviewUpdate() (*UpdatePreview, error) {
 	}
 
 	preview.CanUpdate = true
-	if u.config.CompanionRepository == "" {
+	if u.config.CompanionRepository == "" || u.config.CompanionRequires == "" {
 		return preview, nil
 	}
 
@@ -322,13 +324,12 @@ func (u *Updater) PreviewUpdate() (*UpdatePreview, error) {
 	}
 	preview.CompanionTag = tag
 
-	if normalizeVersion(tag) != normalizeVersion(release.TagName) {
+	if !satisfiesConstraint(normalizeVersion(tag), u.config.CompanionRequires) {
 		preview.CanUpdate = false
 		preview.CompatibilityReason = fmt.Sprintf(
-			"blocked: queue-watcher %s requires %s tag %s, latest tag is %s",
-			release.TagName,
+			"blocked: queue-watcher requires %s %s, installed companion is %s",
 			u.config.CompanionRepository,
-			release.TagName,
+			u.config.CompanionRequires,
 			tag,
 		)
 	}
@@ -657,6 +658,84 @@ func isNewer(candidate, current string) bool {
 		}
 	}
 	return false
+}
+
+// satisfiesConstraint checks if a version string satisfies a space-separated
+// list of constraints. Supported operators: >=, >, <=, <, = (or ==).
+// Example: ">=1.0.0 <2.0.0" means version must be at least 1.0.0 and less than 2.0.0.
+func satisfiesConstraint(ver, constraint string) bool {
+	ver = normalizeVersion(ver)
+	parts := strings.Fields(constraint)
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		var op string
+		var target string
+		switch {
+		case strings.HasPrefix(part, ">="):
+			op, target = ">=", normalizeVersion(part[2:])
+		case strings.HasPrefix(part, ">"):
+			op, target = ">", normalizeVersion(part[1:])
+		case strings.HasPrefix(part, "<="):
+			op, target = "<=", normalizeVersion(part[2:])
+		case strings.HasPrefix(part, "<"):
+			op, target = "<", normalizeVersion(part[1:])
+		case strings.HasPrefix(part, "=="):
+			op, target = "=", normalizeVersion(part[2:])
+		case strings.HasPrefix(part, "="):
+			op, target = "=", normalizeVersion(part[1:])
+		default:
+			op, target = "=", normalizeVersion(part)
+		}
+		cmp := compareSemver(ver, target)
+		switch op {
+		case ">=":
+			if cmp < 0 {
+				return false
+			}
+		case ">":
+			if cmp <= 0 {
+				return false
+			}
+		case "<=":
+			if cmp > 0 {
+				return false
+			}
+		case "<":
+			if cmp >= 0 {
+				return false
+			}
+		case "=":
+			if cmp != 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// compareSemver returns -1, 0, or 1 comparing a and b as semver strings.
+func compareSemver(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	for i := 0; i < 3; i++ {
+		var av, bv int
+		if i < len(aParts) {
+			fmt.Sscanf(aParts[i], "%d", &av)
+		}
+		if i < len(bParts) {
+			fmt.Sscanf(bParts[i], "%d", &bv)
+		}
+		if av < bv {
+			return -1
+		}
+		if av > bv {
+			return 1
+		}
+	}
+	return 0
 }
 
 // Status returns the current updater status for the dashboard.

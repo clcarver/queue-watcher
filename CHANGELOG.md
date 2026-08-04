@@ -2,6 +2,14 @@
 
 All notable changes to queue-watcher are documented in this file.
 
+## [0.2.5] - 2026-08-04
+
+### Changed
+- Companion compatibility check now uses semver range constraints (e.g., `>=1.0.0 <2.0.0`) instead of requiring an exact tag match. Both packages can be versioned independently.
+
+### Added
+- New `companion_requires` config field for specifying the acceptable companion version range.
+
 ## [0.2.4] - 2026-08-04
 
 ### Fixed
