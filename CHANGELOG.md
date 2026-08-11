@@ -2,6 +2,20 @@
 
 All notable changes to queue-watcher are documented in this file.
 
+## [0.3.0] - 2026-08-11
+
+### Added
+- **Mail inbox viewer** — new ✉️ Mails tab with a full mailbox-style interface for browsing emails stored in `queue_watcher_mail` by the companion Laravel package.
+  - Split-pane layout: scrollable message list with reading pane.
+  - Search by subject, from, or to address.
+  - Paginated list; HTML and plain-text body toggle (HTML rendered in a sandboxed iframe).
+  - Refreshes on tab entry or via the refresh button — no live polling.
+- `/api/site/mail` — paginated mail list endpoint with optional `search` parameter.
+- `/api/site/mail/detail` — single mail detail endpoint including full body.
+
+### Changed
+- Companion version requirement bumped to `>=2.0.0 <3.0.0` — **queue-watcher-laravel v2.0.0 is now required** for mail tracking support.
+
 ## [0.2.6] - 2026-08-04
 
 ### Fixed
