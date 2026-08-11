@@ -438,6 +438,195 @@ func (ldb *LaravelDB) queryNewAndRecentFailed(prevMaxID int64, limit int) ([]Fai
 	return jobs, newIDs, maxID, rows.Err()
 }
 
+// ── Mail ──
+
+// MailAddress holds name + email parsed from a JSON address field.
+type MailAddress struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+}
+
+// MailItem represents a row from the queue_watcher_mail table.
+type MailItem struct {
+	ID        int64         `json:"id"`
+	MessageID string        `json:"message_id"`
+	Subject   string        `json:"subject"`
+	SentAt    string        `json:"sent_at"`
+	From      []MailAddress `json:"from"`
+	ReplyTo   []MailAddress `json:"reply_to"`
+	To        []MailAddress `json:"to"`
+	CC        []MailAddress `json:"cc"`
+	BCC       []MailAddress `json:"bcc"`
+	BodyHTML  string        `json:"body_html"`
+	BodyText  string        `json:"body_text"`
+	CreatedAt string        `json:"created_at"`
+}
+
+// MailQueryResult holds a page of mail results plus metadata.
+type MailQueryResult struct {
+	Items      []MailItem `json:"items"`
+	Total      int        `json:"total"`
+	Page       int        `json:"page"`
+	TotalPages int        `json:"total_pages"`
+}
+
+// parseMailAddresses parses a JSON-encoded address field (array or single object).
+func parseMailAddresses(raw string) []MailAddress {
+	if raw == "" {
+		return nil
+	}
+	// Try array first.
+	var arr []MailAddress
+	if err := json.Unmarshal([]byte(raw), &arr); err == nil {
+		return arr
+	}
+	// Try single object.
+	var single MailAddress
+	if err := json.Unmarshal([]byte(raw), &single); err == nil && single.Address != "" {
+		return []MailAddress{single}
+	}
+	return nil
+}
+
+// QueryMail fetches paginated mail items with optional full-text search.
+func (ldb *LaravelDB) QueryMail(search string, page, limit int) (*MailQueryResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	offset := (page - 1) * limit
+
+	// Build WHERE clause for search.
+	var where string
+	var args []interface{}
+	if search != "" {
+		where = `WHERE subject LIKE @p1 OR from_addr LIKE @p1 OR to_addr LIKE @p1`
+		args = []interface{}{sql.Named("p1", "%"+search+"%")}
+	}
+
+	// Count total matching rows.
+	var total int
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT id,
+				CAST([from] AS NVARCHAR(MAX)) AS from_addr,
+				CAST([to]   AS NVARCHAR(MAX)) AS to_addr
+			FROM queue_watcher_mail
+		) AS t %s`, where)
+	if err := ldb.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("count mail: %w", err)
+	}
+
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Fetch the page.
+	pageArgs := append(args,
+		sql.Named("lim", limit),
+		sql.Named("off", offset),
+	)
+	dataQuery := fmt.Sprintf(`
+		SELECT id,
+			ISNULL(message_id,''),
+			ISNULL(subject,''),
+			ISNULL(sent_at,''),
+			CAST([from]     AS NVARCHAR(MAX)),
+			ISNULL(CAST(reply_to AS NVARCHAR(MAX)),''),
+			CAST([to]       AS NVARCHAR(MAX)),
+			ISNULL(CAST(cc  AS NVARCHAR(MAX)),''),
+			ISNULL(CAST(bcc AS NVARCHAR(MAX)),''),
+			ISNULL(body_html,''),
+			ISNULL(body_text,''),
+			CONVERT(VARCHAR(19), created_at, 120)
+		FROM (
+			SELECT *,
+				CAST([from] AS NVARCHAR(MAX)) AS from_addr,
+				CAST([to]   AS NVARCHAR(MAX)) AS to_addr,
+				ROW_NUMBER() OVER (ORDER BY id DESC) AS rn
+			FROM queue_watcher_mail
+		) AS t %s
+		ORDER BY rn
+		OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY`, where)
+
+	rows, err := ldb.db.Query(dataQuery, pageArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("query mail: %w", err)
+	}
+	defer rows.Close()
+
+	var items []MailItem
+	for rows.Next() {
+		var m MailItem
+		var fromRaw, replyToRaw, toRaw, ccRaw, bccRaw string
+		if err := rows.Scan(
+			&m.ID, &m.MessageID, &m.Subject, &m.SentAt,
+			&fromRaw, &replyToRaw, &toRaw, &ccRaw, &bccRaw,
+			&m.BodyHTML, &m.BodyText, &m.CreatedAt,
+		); err != nil {
+			continue
+		}
+		m.From = parseMailAddresses(fromRaw)
+		m.ReplyTo = parseMailAddresses(replyToRaw)
+		m.To = parseMailAddresses(toRaw)
+		m.CC = parseMailAddresses(ccRaw)
+		m.BCC = parseMailAddresses(bccRaw)
+		// Strip body from list view — body is fetched separately per item.
+		m.BodyHTML = ""
+		m.BodyText = ""
+		items = append(items, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scan mail rows: %w", err)
+	}
+
+	return &MailQueryResult{
+		Items:      items,
+		Total:      total,
+		Page:       page,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// GetMailDetail fetches a single mail item including body content.
+func (ldb *LaravelDB) GetMailDetail(id int64) (*MailItem, error) {
+	query := `
+		SELECT id,
+			ISNULL(message_id,''),
+			ISNULL(subject,''),
+			ISNULL(sent_at,''),
+			CAST([from]     AS NVARCHAR(MAX)),
+			ISNULL(CAST(reply_to AS NVARCHAR(MAX)),''),
+			CAST([to]       AS NVARCHAR(MAX)),
+			ISNULL(CAST(cc  AS NVARCHAR(MAX)),''),
+			ISNULL(CAST(bcc AS NVARCHAR(MAX)),''),
+			ISNULL(body_html,''),
+			ISNULL(body_text,''),
+			CONVERT(VARCHAR(19), created_at, 120)
+		FROM queue_watcher_mail
+		WHERE id = @p1`
+
+	row := ldb.db.QueryRow(query, sql.Named("p1", id))
+	var m MailItem
+	var fromRaw, replyToRaw, toRaw, ccRaw, bccRaw string
+	if err := row.Scan(
+		&m.ID, &m.MessageID, &m.Subject, &m.SentAt,
+		&fromRaw, &replyToRaw, &toRaw, &ccRaw, &bccRaw,
+		&m.BodyHTML, &m.BodyText, &m.CreatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("get mail detail: %w", err)
+	}
+	m.From = parseMailAddresses(fromRaw)
+	m.ReplyTo = parseMailAddresses(replyToRaw)
+	m.To = parseMailAddresses(toRaw)
+	m.CC = parseMailAddresses(ccRaw)
+	m.BCC = parseMailAddresses(bccRaw)
+	return &m, nil
+}
+
 // extractJobName parses the job class name from a Laravel job payload JSON.
 func extractJobName(payload string) string {
 	var p struct {

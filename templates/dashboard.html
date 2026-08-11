@@ -183,11 +183,35 @@
         .log-detail-pre { background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:0.75rem; font-family:monospace; font-size:0.72rem; color:var(--text-muted); white-space:pre-wrap; word-break:break-all; max-height:350px; overflow-y:auto; margin-top:0.35rem; }
         .log-empty { padding:3rem; text-align:center; color:var(--text-muted); }
 
-        /* ── Mails placeholder ── */
-        .coming-soon { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; color:var(--text-muted); padding:3rem; }
-        .coming-soon .icon { font-size:3.5rem; }
-        .coming-soon h3 { font-size:1.1rem; color:var(--text); }
-        .coming-soon p { font-size:0.85rem; text-align:center; max-width:400px; line-height:1.6; }
+        /* ── Mail ── */
+        .mail-layout { display:flex; flex:1; overflow:hidden; min-height:0; }
+        .mail-list-pane { width:340px; flex-shrink:0; border-right:1px solid var(--border); background:var(--bg-panel); display:flex; flex-direction:column; }
+        .mail-toolbar { padding:0.6rem 0.75rem; border-bottom:1px solid var(--border); display:flex; gap:0.4rem; align-items:center; flex-shrink:0; }
+        .mail-search { flex:1; padding:0.35rem 0.75rem; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-size:0.8rem; }
+        .mail-search:focus { outline:none; border-color:var(--blue); }
+        .mail-items { flex:1; overflow-y:auto; }
+        .mail-item { padding:0.65rem 0.75rem; border-bottom:1px solid var(--border-muted); cursor:pointer; transition:background 0.1s; border-left:2px solid transparent; }
+        .mail-item:hover { background:var(--bg-card); }
+        .mail-item.active { background:rgba(56,139,253,0.08); border-left-color:var(--blue); }
+        .mail-item .mi-subject { font-size:0.82rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mail-item .mi-from { font-size:0.72rem; color:var(--text-muted); margin-top:0.1rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mail-item .mi-date { font-size:0.68rem; color:var(--text-subtle); margin-top:0.2rem; }
+        .mail-pager { padding:0.5rem 0.75rem; border-top:1px solid var(--border); display:flex; gap:0.4rem; align-items:center; justify-content:center; font-size:0.75rem; flex-shrink:0; }
+        .mail-detail-pane { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+        .mail-detail-header { padding:1rem 1.25rem; border-bottom:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; }
+        .mail-detail-subject { font-size:1rem; font-weight:700; margin-bottom:0.5rem; }
+        .mail-detail-meta { font-size:0.75rem; color:var(--text-muted); display:flex; flex-direction:column; gap:0.2rem; }
+        .mail-detail-meta span strong { color:var(--text); }
+        .mail-detail-body { flex:1; overflow:auto; }
+        .mail-detail-frame { width:100%; height:100%; border:none; background:#fff; }
+        .mail-detail-text { padding:1.25rem; font-size:0.82rem; font-family:monospace; white-space:pre-wrap; word-break:break-word; color:var(--text); }
+        .mail-body-toggle { display:flex; gap:0.4rem; padding:0.5rem 1.25rem; border-bottom:1px solid var(--border); background:var(--bg-panel); flex-shrink:0; }
+        .mail-view-btn { padding:0.2rem 0.6rem; border:1px solid var(--border); background:transparent; color:var(--text-muted); border-radius:var(--radius); font-size:0.72rem; cursor:pointer; }
+        .mail-view-btn.active { background:rgba(56,139,253,0.15); border-color:var(--blue); color:var(--blue); }
+        .mail-no-select { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:0.75rem; color:var(--text-muted); }
+        .mail-empty { padding:3rem; text-align:center; color:var(--text-muted); font-size:0.85rem; }
+        .mail-no-db { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; color:var(--text-muted); padding:3rem; }
+        .mail-no-db .icon { font-size:3rem; }
 
         /* ── Modals ── */
         .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; padding:1rem; }
@@ -291,7 +315,7 @@
                 </div>
                 <div class="tab" onclick="switchTab('mails')" id="tab-mails">
                     ✉️ Mails
-                    <span class="tab-badge" id="tbadge-mails">Soon</span>
+                    <span class="tab-badge" id="tbadge-mails">0</span>
                 </div>
             </div>
         </div>
@@ -407,10 +431,49 @@
 
             <!-- ── MAILS ── -->
             <div class="tab-panel" id="panel-mails">
-                <div class="coming-soon">
-                    <div class="icon">✉️</div>
-                    <h3>Mail Viewer — Coming Soon</h3>
-                    <p>This tab will let you browse Laravel mailables sent by your application. Configure recipients and SMTP settings in <strong>⚙️ Settings → Notifications</strong> to receive email alerts for failures and log errors today.</p>
+                <!-- No DB connected state -->
+                <div class="mail-no-db" id="mail-no-db" style="display:none;">
+                    <div class="icon">🔌</div>
+                    <h3 style="color:var(--text)">Database Not Connected</h3>
+                    <p style="font-size:0.85rem;text-align:center;max-width:380px;line-height:1.6;">Configure the database connection for this site in <strong>✏️ Edit</strong> to browse mail.</p>
+                </div>
+                <!-- Mailbox layout -->
+                <div class="mail-layout" id="mail-layout">
+                    <div class="mail-list-pane">
+                        <div class="mail-toolbar">
+                            <input class="mail-search" id="mail-search" type="search" placeholder="🔍 Search subject, from, to…" oninput="debounceMailSearch()" />
+                            <button class="btn btn-sm btn-blue" onclick="refreshMail()" title="Refresh">↺</button>
+                        </div>
+                        <div class="mail-items" id="mail-items">
+                            <div class="mail-empty">Loading…</div>
+                        </div>
+                        <div class="mail-pager" id="mail-pager"></div>
+                    </div>
+                    <div class="mail-detail-pane" id="mail-detail-pane">
+                        <div class="mail-no-select" id="mail-no-select">
+                            <span style="font-size:2.5rem;">✉️</span>
+                            <span>Select a message to read it</span>
+                        </div>
+                        <div id="mail-detail" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+                            <div class="mail-detail-header">
+                                <div class="mail-detail-subject" id="md-subject"></div>
+                                <div class="mail-detail-meta">
+                                    <span><strong>From:</strong> <span id="md-from"></span></span>
+                                    <span id="md-to-row"><strong>To:</strong> <span id="md-to"></span></span>
+                                    <span id="md-cc-row" style="display:none"><strong>CC:</strong> <span id="md-cc"></span></span>
+                                    <span><strong>Date:</strong> <span id="md-date"></span></span>
+                                </div>
+                            </div>
+                            <div class="mail-body-toggle">
+                                <button class="mail-view-btn active" id="mbtn-html" onclick="setMailView('html')">HTML</button>
+                                <button class="mail-view-btn" id="mbtn-text" onclick="setMailView('text')">Plain Text</button>
+                            </div>
+                            <div class="mail-detail-body" id="mail-detail-body">
+                                <iframe class="mail-detail-frame" id="mail-iframe" sandbox="allow-same-origin" title="Mail body"></iframe>
+                                <pre class="mail-detail-text" id="mail-text-body" style="display:none;"></pre>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1057,6 +1120,7 @@ function switchTab(name) {
         document.getElementById('panel-'+t).className='tab-panel'+(t===name?' active':'');
     });
     if(name==='logs' && currentSiteId) loadLogFiles();
+    if(name==='mails' && currentSiteId) loadMail();
 }
 
 // ══════════ LOG VIEWER ══════════
@@ -1292,6 +1356,149 @@ async function confirmStopService() {
         }
     } catch(e) {
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;"><div style="text-align:center;"><h2>⏹ Service Stopped</h2><p>Queue Watcher has shut down gracefully.<br>You may now perform a manual update.</p></div></div>';
+    }
+}
+
+// ══════════ MAIL ══════════
+
+let mailPage = 1;
+let mailSearchVal = '';
+let mailSearchTimer = null;
+let mailCurrentId = null;
+let mailViewMode = 'html'; // 'html' or 'text'
+let mailCurrentItem = null;
+
+function debounceMailSearch() {
+    clearTimeout(mailSearchTimer);
+    mailSearchTimer = setTimeout(() => {
+        mailSearchVal = document.getElementById('mail-search').value;
+        mailPage = 1;
+        loadMail();
+    }, 350);
+}
+
+function refreshMail() { mailPage = 1; loadMail(); }
+
+async function loadMail() {
+    if (!currentSiteId) return;
+    const site = allSites.find(x => x.id === currentSiteId);
+    const noDb = document.getElementById('mail-no-db');
+    const layout = document.getElementById('mail-layout');
+    if (!site || !site.db_connected) {
+        noDb.style.display = 'flex';
+        layout.style.display = 'none';
+        return;
+    }
+    noDb.style.display = 'none';
+    layout.style.display = 'flex';
+
+    const params = new URLSearchParams({ site_id: currentSiteId, page: mailPage, limit: 50 });
+    if (mailSearchVal) params.set('search', mailSearchVal);
+
+    try {
+        const r = await fetch('/api/site/mail?' + params);
+        if (!r.ok) {
+            const d = await r.json();
+            document.getElementById('mail-items').innerHTML = `<div class="mail-empty">❌ ${esc(d.message || 'Error loading mail')}</div>`;
+            return;
+        }
+        const d = await r.json();
+        const items = d.items || [];
+
+        document.getElementById('tbadge-mails').textContent = d.total || 0;
+
+        if (!items.length) {
+            document.getElementById('mail-items').innerHTML = `<div class="mail-empty">${mailSearchVal ? 'No results for "' + esc(mailSearchVal) + '"' : 'No mail in the database.'}</div>`;
+            renderMailPager(d.page, d.total_pages);
+            return;
+        }
+
+        document.getElementById('mail-items').innerHTML = items.map(m => {
+            const fromAddr = formatMailAddr(m.from);
+            const dateStr = m.sent_at || m.created_at || '';
+            return `<div class="mail-item ${m.id === mailCurrentId ? 'active' : ''}" onclick="selectMail(${m.id})" data-id="${m.id}">
+                <div class="mi-subject">${esc(m.subject || '(no subject)')}</div>
+                <div class="mi-from">${esc(fromAddr)}</div>
+                <div class="mi-date">${esc(dateStr)}</div>
+            </div>`;
+        }).join('');
+
+        renderMailPager(d.page, d.total_pages);
+    } catch (e) {
+        document.getElementById('mail-items').innerHTML = `<div class="mail-empty">Error: ${esc(e.message)}</div>`;
+    }
+}
+
+function formatMailAddr(addrs) {
+    if (!addrs || !addrs.length) return '—';
+    return addrs.map(a => a.name ? a.name + ' <' + a.address + '>' : a.address).join(', ');
+}
+
+function renderMailPager(page, totalPages) {
+    const el = document.getElementById('mail-pager');
+    if (!el || totalPages <= 1) { if(el) el.innerHTML = ''; return; }
+    el.innerHTML = `
+        <button onclick="mailGoPage(${page - 1})" ${page <= 1 ? 'disabled' : ''} style="padding:0.2rem 0.6rem;background:var(--bg-card);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);cursor:pointer;font-size:0.72rem;">‹</button>
+        <span style="color:var(--text-muted)">${page} / ${totalPages}</span>
+        <button onclick="mailGoPage(${page + 1})" ${page >= totalPages ? 'disabled' : ''} style="padding:0.2rem 0.6rem;background:var(--bg-card);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);cursor:pointer;font-size:0.72rem;">›</button>`;
+}
+
+function mailGoPage(p) { mailPage = p; loadMail(); }
+
+async function selectMail(id) {
+    mailCurrentId = id;
+    // Mark active in list.
+    document.querySelectorAll('.mail-item').forEach(el => {
+        el.classList.toggle('active', +el.dataset.id === id);
+    });
+
+    document.getElementById('mail-no-select').style.display = 'none';
+    const detail = document.getElementById('mail-detail');
+    detail.style.display = 'flex';
+    document.getElementById('md-subject').textContent = 'Loading…';
+    document.getElementById('mail-iframe').srcdoc = '';
+    document.getElementById('mail-text-body').textContent = '';
+
+    try {
+        const r = await fetch(`/api/site/mail/detail?site_id=${currentSiteId}&id=${id}`);
+        if (!r.ok) { const d = await r.json(); toast('❌ ' + (d.message || 'Error'), 'error'); return; }
+        const m = await r.json();
+        mailCurrentItem = m;
+
+        document.getElementById('md-subject').textContent = m.subject || '(no subject)';
+        document.getElementById('md-from').textContent = formatMailAddr(m.from);
+        document.getElementById('md-to').textContent = formatMailAddr(m.to);
+        const ccRow = document.getElementById('md-cc-row');
+        if (m.cc && m.cc.length) {
+            document.getElementById('md-cc').textContent = formatMailAddr(m.cc);
+            ccRow.style.display = '';
+        } else {
+            ccRow.style.display = 'none';
+        }
+        document.getElementById('md-date').textContent = m.sent_at || m.created_at || '—';
+
+        setMailView(mailViewMode);
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function setMailView(mode) {
+    mailViewMode = mode;
+    document.getElementById('mbtn-html').className = 'mail-view-btn' + (mode === 'html' ? ' active' : '');
+    document.getElementById('mbtn-text').className = 'mail-view-btn' + (mode === 'text' ? ' active' : '');
+
+    const iframe = document.getElementById('mail-iframe');
+    const textEl = document.getElementById('mail-text-body');
+
+    if (!mailCurrentItem) return;
+
+    if (mode === 'html') {
+        iframe.style.display = '';
+        textEl.style.display = 'none';
+        iframe.srcdoc = mailCurrentItem.body_html || '<p style="font-family:sans-serif;color:#888;padding:1rem;">No HTML body available.</p>';
+    } else {
+        iframe.style.display = 'none';
+        textEl.style.display = '';
+        textEl.textContent = mailCurrentItem.body_text || '(no plain text body)';
     }
 }
 

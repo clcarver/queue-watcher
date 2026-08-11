@@ -73,6 +73,10 @@ func (ds *DashboardServer) Run(ctx context.Context) {
 	mux.HandleFunc("/api/site/logs/files", ds.handleAPILogFiles)
 	mux.HandleFunc("/api/site/logs/entries", ds.handleAPILogEntries)
 
+	// Mail APIs.
+	mux.HandleFunc("/api/site/mail", ds.handleAPISiteMail)
+	mux.HandleFunc("/api/site/mail/detail", ds.handleAPISiteMailDetail)
+
 	// Updater API.
 	mux.HandleFunc("/api/update/status", ds.handleAPIUpdateStatus)
 	mux.HandleFunc("/api/update/check", ds.handleAPIUpdateCheck)
@@ -913,6 +917,64 @@ func (ds *DashboardServer) handleAPILogEntries(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// handleAPISiteMail returns paginated mail items from queue_watcher_mail.
+func (ds *DashboardServer) handleAPISiteMail(w http.ResponseWriter, r *http.Request) {
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+	if site.DB == nil {
+		jsonError(w, "No database connection for this site", http.StatusBadRequest)
+		return
+	}
+
+	search := r.URL.Query().Get("search")
+	page := 1
+	if n, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && n > 1 {
+		page = n
+	}
+	limit := 50
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 200 {
+		limit = n
+	}
+
+	result, err := site.DB.QueryMail(search, page, limit)
+	if err != nil {
+		jsonError(w, "Failed to query mail: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// handleAPISiteMailDetail returns the full body of a single mail item.
+func (ds *DashboardServer) handleAPISiteMailDetail(w http.ResponseWriter, r *http.Request) {
+	site := ds.requireSite(w, r)
+	if site == nil {
+		return
+	}
+	if site.DB == nil {
+		jsonError(w, "No database connection for this site", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || id < 1 {
+		jsonError(w, "Invalid 'id' parameter", http.StatusBadRequest)
+		return
+	}
+
+	item, err := site.DB.GetMailDetail(id)
+	if err != nil {
+		jsonError(w, "Mail item not found: "+err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(item)
 }
 
 // handleAPISettings returns or updates global settings (including notify config).
