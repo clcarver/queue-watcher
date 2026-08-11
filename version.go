@@ -5,7 +5,7 @@ import "fmt"
 // These variables are set at build time via ldflags:
 //   go build -ldflags "-X main.version=v1.2.3 -X main.commit=abc123 -X main.buildDate=2026-07-30"
 var (
-	version   = "0.3.0"
+	version   = "0.3.1"
 	commit    = "unknown"
 	buildDate = "unknown"
 )

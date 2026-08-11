@@ -2,6 +2,12 @@
 
 All notable changes to queue-watcher are documented in this file.
 
+## [0.3.1] - 2026-08-11
+
+### Fixed
+- Companion compatibility check now validates the **installed** companion version against the **target release's** requirements, not the current binary's. Previously, once the companion advanced to a new major version the update check would be permanently blocked.
+- `companion_requires.txt` is now generated and uploaded as a release asset at build time, allowing each release to declare its own companion constraint independently.
+
 ## [0.3.0] - 2026-08-11
 
 ### Added
