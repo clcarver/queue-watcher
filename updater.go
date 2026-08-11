@@ -34,7 +34,7 @@ func DefaultUpdateConfig() *UpdateConfig {
 		Repository:          "clcarver/queue-watcher",
 		CheckInterval:       1 * time.Hour,
 		CompanionRepository: "clcarver/queue-watcher-laravel",
-		CompanionRequires:   ">=1.0.0 <2.0.0",
+		CompanionRequires:   ">=2.0.0 <3.0.0",
 	}
 }
 
