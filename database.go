@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "modernc.org/sqlite"
 )
@@ -44,40 +46,175 @@ func ReadLaravelEnv(laravelPath string) (EnvVars, error) {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
-		// Strip surrounding quotes.
 		val = strings.Trim(val, `"'`)
 		vars[key] = val
 	}
 	return vars, scanner.Err()
 }
 
-// BuildMSSQLDSN constructs a go-mssqldb connection string from Laravel env vars.
-// Kept as utility for testing; primary path uses NewLaravelDB with SiteConfig.
-func BuildMSSQLDSN(env EnvVars) string {
-	host := env["DB_HOST"]
-	if host == "" {
-		host = "127.0.0.1"
+// DetectDBDriver reads DB_CONNECTION from a Laravel .env and maps it to a
+// canonical driver name: "sqlserver", "mysql", or "postgres".
+// Returns "" if the key is absent or unrecognised.
+func DetectDBDriver(env EnvVars) string {
+	conn := strings.ToLower(strings.TrimSpace(env["DB_CONNECTION"]))
+	switch conn {
+	case "sqlsrv", "sqlserver", "mssql":
+		return "sqlserver"
+	case "mysql", "mariadb":
+		return "mysql"
+	case "pgsql", "postgres", "postgresql":
+		return "postgres"
 	}
-	port := env["DB_PORT"]
+	return ""
+}
+
+// ── Dialect abstraction ──
+//
+// Each supported database has slightly different SQL syntax for things like
+// row-limiting, NULL coalescing, named parameters, and timestamp formatting.
+// dbDialect centralises those differences so query builders don't need to
+// branch on the driver everywhere.
+
+type dbDialect interface {
+	// limit returns a SELECT wrapper / clause that limits to n rows.
+	// rowsSQL is the inner column list + FROM + WHERE, already built.
+	limitClause(n int) string
+
+	// coalesce wraps an expression so NULL becomes an empty string.
+	coalesce(expr string) string
+
+	// placeholder returns the positional placeholder for argument index i (0-based).
+	placeholder(i int) string
+
+	// castText casts a column to a text/string type (for JSON columns stored as nvarchar/text).
+	castText(col string) string
+
+	// fmtTimestamp formats a timestamp column as 'YYYY-MM-DD HH:MM:SS'.
+	fmtTimestamp(col string) string
+
+	// paginationClause returns the SQL fragment appended after ORDER BY for
+	// OFFSET/LIMIT pagination, e.g. "OFFSET 0 ROWS FETCH NEXT 50 ROWS ONLY".
+	paginationClause(offset, limit int) string
+
+	// quoteIdent wraps an identifier in the correct quotes for the dialect.
+	quoteIdent(name string) string
+}
+
+// ── MSSQL dialect ──
+
+type mssqlDialect struct{}
+
+func (mssqlDialect) limitClause(n int) string { return fmt.Sprintf("TOP %d", n) }
+func (mssqlDialect) coalesce(expr string) string {
+	return fmt.Sprintf("ISNULL(%s,'')", expr)
+}
+func (mssqlDialect) placeholder(i int) string { return fmt.Sprintf("@p%d", i+1) }
+func (mssqlDialect) castText(col string) string {
+	return fmt.Sprintf("CAST(%s AS NVARCHAR(MAX))", col)
+}
+func (mssqlDialect) fmtTimestamp(col string) string {
+	return fmt.Sprintf("CONVERT(VARCHAR(19), %s, 120)", col)
+}
+func (mssqlDialect) paginationClause(offset, limit int) string {
+	return fmt.Sprintf("OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", offset, limit)
+}
+func (mssqlDialect) quoteIdent(name string) string { return "[" + name + "]" }
+
+// ── MySQL dialect ──
+
+type mysqlDialect struct{}
+
+func (mysqlDialect) limitClause(n int) string { return "" } // appended via paginationClause
+func (mysqlDialect) coalesce(expr string) string {
+	return fmt.Sprintf("COALESCE(%s,'')", expr)
+}
+func (mysqlDialect) placeholder(i int) string { return "?" }
+func (mysqlDialect) castText(col string) string {
+	return fmt.Sprintf("CAST(%s AS CHAR)", col)
+}
+func (mysqlDialect) fmtTimestamp(col string) string {
+	return fmt.Sprintf("DATE_FORMAT(%s, '%%Y-%%m-%%d %%H:%%i:%%s')", col)
+}
+func (mysqlDialect) paginationClause(offset, limit int) string {
+	return fmt.Sprintf("LIMIT %d OFFSET %d", limit, offset)
+}
+func (mysqlDialect) quoteIdent(name string) string { return "`" + name + "`" }
+
+// ── PostgreSQL dialect ──
+
+type postgresDialect struct{}
+
+func (postgresDialect) limitClause(n int) string { return "" } // appended via paginationClause
+func (postgresDialect) coalesce(expr string) string {
+	return fmt.Sprintf("COALESCE(%s,'')", expr)
+}
+func (postgresDialect) placeholder(i int) string { return fmt.Sprintf("$%d", i+1) }
+func (postgresDialect) castText(col string) string {
+	return fmt.Sprintf("CAST(%s AS TEXT)", col)
+}
+func (postgresDialect) fmtTimestamp(col string) string {
+	return fmt.Sprintf("TO_CHAR(%s, 'YYYY-MM-DD HH24:MI:SS')", col)
+}
+func (postgresDialect) paginationClause(offset, limit int) string {
+	return fmt.Sprintf("LIMIT %d OFFSET %d", limit, offset)
+}
+func (postgresDialect) quoteIdent(name string) string { return `"` + name + `"` }
+
+// dialectFor returns the correct dbDialect for the given driver name.
+func dialectFor(driver string) dbDialect {
+	switch driver {
+	case "mysql":
+		return mysqlDialect{}
+	case "postgres":
+		return postgresDialect{}
+	default:
+		return mssqlDialect{}
+	}
+}
+
+// ── DSN builders ──
+
+func buildMSSQLDSN(host, port, database, user, pass string) string {
 	if port == "" {
 		port = "1433"
 	}
-	database := env["DB_DATABASE"]
-	user := env["DB_USERNAME"]
-	pass := env["DB_PASSWORD"]
-
-	query := url.Values{}
-	query.Add("database", database)
-	query.Add("encrypt", "disable")
-	query.Add("ApplicationIntent", "ReadOnly")
-
+	q := url.Values{}
+	q.Add("database", database)
+	q.Add("encrypt", "disable")
+	q.Add("app name", "queue-watcher")
 	u := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(user, pass),
 		Host:     fmt.Sprintf("%s:%s", host, port),
-		RawQuery: query.Encode(),
+		RawQuery: q.Encode(),
 	}
 	return u.String()
+}
+
+func buildMySQLDSN(host, port, database, user, pass string) string {
+	if port == "" {
+		port = "3306"
+	}
+	// mysql DSN: user:pass@tcp(host:port)/dbname?params
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=UTC",
+		user, pass, host, port, database)
+}
+
+func buildPostgresDSN(host, port, database, user, pass string) string {
+	if port == "" {
+		port = "5432"
+	}
+	return fmt.Sprintf("host=%s port=%s dbname=%s user=%s password=%s sslmode=disable",
+		host, port, database, user, pass)
+}
+
+// BuildMSSQLDSN constructs a go-mssqldb connection string from Laravel env vars.
+// Kept as utility for backward compatibility.
+func BuildMSSQLDSN(env EnvVars) string {
+	return buildMSSQLDSN(
+		env["DB_HOST"], env["DB_PORT"],
+		env["DB_DATABASE"], env["DB_USERNAME"], env["DB_PASSWORD"],
+	)
 }
 
 // ── Laravel Database Reader ──
@@ -86,9 +223,9 @@ func BuildMSSQLDSN(env EnvVars) string {
 type QueueJob struct {
 	ID          int64  `json:"id"`
 	Queue       string `json:"queue"`
-	PayloadName string `json:"payload_name"` // Extracted job class from payload JSON.
+	PayloadName string `json:"payload_name"`
 	Attempts    int    `json:"attempts"`
-	ReservedAt  *int64 `json:"reserved_at"`  // Unix timestamp if reserved, nil if pending.
+	ReservedAt  *int64 `json:"reserved_at"`
 	AvailableAt int64  `json:"available_at"`
 	CreatedAt   int64  `json:"created_at"`
 }
@@ -99,7 +236,7 @@ type FailedJob struct {
 	UUID       string `json:"uuid"`
 	Connection string `json:"connection"`
 	Queue      string `json:"queue"`
-	JobName    string `json:"job_name"` // Extracted from payload.
+	JobName    string `json:"job_name"`
 	Exception  string `json:"exception"`
 	FailedAt   string `json:"failed_at"`
 }
@@ -118,11 +255,11 @@ type QueueMetrics struct {
 
 // QueueStat holds per-queue timing averages.
 type QueueStat struct {
-	Queue        string  `json:"queue"`
-	AvgWaitMs    float64 `json:"avg_wait_ms"`
-	AvgExecMs    float64 `json:"avg_exec_ms"`
-	Processed    int     `json:"processed"`
-	Failed       int     `json:"failed"`
+	Queue     string  `json:"queue"`
+	AvgWaitMs float64 `json:"avg_wait_ms"`
+	AvgExecMs float64 `json:"avg_exec_ms"`
+	Processed int     `json:"processed"`
+	Failed    int     `json:"failed"`
 }
 
 // trackedJob holds state for a job we saw in a previous poll.
@@ -131,35 +268,37 @@ type trackedJob struct {
 	Queue      string
 	JobName    string
 	CreatedAt  int64
-	ReservedAt int64 // Unix timestamp when the worker picked it up.
+	ReservedAt int64
 	SeenAt     time.Time
 }
 
-// LaravelDB reads queue state from the Laravel application's MSSQL database.
+// LaravelDB reads queue state from the Laravel application's database.
 type LaravelDB struct {
 	db          *sql.DB
+	driver      string    // "sqlserver", "mysql", or "postgres"
+	dialect     dbDialect
 	mu          sync.RWMutex
 	lastMetrics *QueueMetrics
 	connected   bool
 	lastError   string
 
-	// Job-diff tracking: detect completions by comparing polls.
-	prevJobs      map[int64]*trackedJob // Jobs seen in previous poll (by ID).
-	prevFailedMax int64                 // Highest failed_jobs.id seen.
-	OnCompletion  func(event JobEvent)  // Called when a completed/failed job is detected.
-	OnNewFailed   func(job *FailedJob)  // Called when a new failed job is detected via DB diff.
+	prevJobs      map[int64]*trackedJob
+	prevFailedMax int64
+	OnCompletion  func(event JobEvent)
+	OnNewFailed   func(job *FailedJob)
 }
 
 // NewLaravelDB connects to the Laravel database using the site's .env file.
-// The config fields (db_host_env, etc.) name keys inside the site's .env file.
+// The driver is resolved in this order:
+//  1. sc.DBDriver (explicit override in config)
+//  2. DB_CONNECTION value in the .env file (auto-detect)
+//  3. Default to "sqlserver" for backward compatibility
 func NewLaravelDB(sc *SiteConfig) (*LaravelDB, error) {
 	env, err := ReadLaravelEnv(sc.LaravelPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read .env from %s: %w", sc.LaravelPath, err)
 	}
 
-	// Resolve each credential from the configured .env key name.
-	// Fall back to standard Laravel keys if no mapping is configured.
 	host := envLookup(env, sc.DBHostEnv, "DB_HOST")
 	port := envLookup(env, sc.DBPortEnv, "DB_PORT")
 	database := envLookup(env, sc.DBDatabaseEnv, "DB_DATABASE")
@@ -169,42 +308,60 @@ func NewLaravelDB(sc *SiteConfig) (*LaravelDB, error) {
 	if host == "" || database == "" {
 		return nil, fmt.Errorf("database host and database name are required (check .env key mappings)")
 	}
-	if port == "" {
-		port = "1433"
+
+	// Resolve driver.
+	driver := strings.ToLower(strings.TrimSpace(sc.DBDriver))
+	if driver == "" {
+		driver = DetectDBDriver(env)
+	}
+	if driver == "" {
+		driver = "sqlserver" // backward-compatible default
 	}
 
-	query := url.Values{}
-	query.Add("database", database)
-	query.Add("encrypt", "disable")
-	query.Add("app name", "queue-watcher")
-
-	u := &url.URL{
-		Scheme:   "sqlserver",
-		User:     url.UserPassword(user, pass),
-		Host:     fmt.Sprintf("%s:%s", host, port),
-		RawQuery: query.Encode(),
+	// Normalise aliases → canonical driver names.
+	switch driver {
+	case "sqlsrv", "mssql":
+		driver = "sqlserver"
+	case "mariadb":
+		driver = "mysql"
+	case "pgsql", "postgresql":
+		driver = "postgres"
 	}
-	dsn := u.String()
 
-	db, err := sql.Open("sqlserver", dsn)
+	var dsn, driverName string
+	switch driver {
+	case "mysql":
+		driverName = "mysql"
+		dsn = buildMySQLDSN(host, port, database, user, pass)
+	case "postgres":
+		driverName = "postgres"
+		dsn = buildPostgresDSN(host, port, database, user, pass)
+	default:
+		driverName = "sqlserver"
+		driver = "sqlserver"
+		dsn = buildMSSQLDSN(host, port, database, user, pass)
+	}
+
+	db, err := sql.Open(driverName, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open MSSQL connection: %w", err)
+		return nil, fmt.Errorf("failed to open %s connection: %w", driver, err)
 	}
 
 	db.SetMaxOpenConns(3)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// Test connectivity.
 	if err := db.Ping(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to connect to MSSQL (%s): %w", host, err)
+		return nil, fmt.Errorf("failed to connect to %s (%s): %w", driver, host, err)
 	}
 
-	log.Printf("[laraveldb] Connected to MSSQL database %q at %s (read-only)", database, host)
+	log.Printf("[laraveldb] Connected to %s database %q at %s", driver, database, host)
 
 	return &LaravelDB{
-		db:        db,
+		db:       db,
+		driver:   driver,
+		dialect:  dialectFor(driver),
 		connected: true,
 		prevJobs:  make(map[int64]*trackedJob),
 	}, nil
@@ -220,6 +377,9 @@ func envLookup(env EnvVars, configuredKey, fallbackKey string) string {
 	}
 	return env[fallbackKey]
 }
+
+// Driver returns the resolved driver name for this connection.
+func (ldb *LaravelDB) Driver() string { return ldb.driver }
 
 // Close closes the database connection.
 func (ldb *LaravelDB) Close() {
@@ -371,8 +531,17 @@ func (ldb *LaravelDB) GetCachedMetrics() *QueueMetrics {
 
 // queryAllJobs reads all rows from the `jobs` table (pending and reserved).
 func (ldb *LaravelDB) queryAllJobs() ([]QueueJob, error) {
-	query := `SELECT TOP 500 id, queue, payload, attempts, reserved_at, available_at, created_at
-			  FROM jobs ORDER BY id ASC`
+	d := ldb.dialect
+	var query string
+	switch ldb.driver {
+	case "mysql", "postgres":
+		query = fmt.Sprintf(
+			`SELECT id, queue, payload, attempts, reserved_at, available_at, created_at FROM jobs ORDER BY id ASC %s`,
+			d.paginationClause(0, 500),
+		)
+	default: // sqlserver
+		query = `SELECT TOP 500 id, queue, payload, attempts, reserved_at, available_at, created_at FROM jobs ORDER BY id ASC`
+	}
 
 	rows, err := ldb.db.Query(query)
 	if err != nil {
@@ -403,8 +572,20 @@ func (ldb *LaravelDB) queryAllJobs() ([]QueueJob, error) {
 // - A set of IDs above the high-water mark (for diff detection)
 // - The new high-water mark
 func (ldb *LaravelDB) queryNewAndRecentFailed(prevMaxID int64, limit int) ([]FailedJob, map[int64]bool, int64, error) {
-	query := fmt.Sprintf(`SELECT TOP %d id, ISNULL(uuid, ''), connection, queue, payload, exception, failed_at
-						   FROM failed_jobs ORDER BY id DESC`, limit)
+	d := ldb.dialect
+	var query string
+	switch ldb.driver {
+	case "mysql", "postgres":
+		query = fmt.Sprintf(
+			`SELECT id, COALESCE(uuid,''), connection, queue, payload, exception, failed_at FROM failed_jobs ORDER BY id DESC %s`,
+			d.paginationClause(0, limit),
+		)
+	default: // sqlserver
+		query = fmt.Sprintf(
+			`SELECT TOP %d id, ISNULL(uuid,''), connection, queue, payload, exception, failed_at FROM failed_jobs ORDER BY id DESC`,
+			limit,
+		)
+	}
 
 	rows, err := ldb.db.Query(query)
 	if err != nil {
@@ -497,24 +678,45 @@ func (ldb *LaravelDB) QueryMail(search string, page, limit int) (*MailQueryResul
 		limit = 50
 	}
 	offset := (page - 1) * limit
+	d := ldb.dialect
 
-	// Build WHERE clause for search.
-	var where string
+	fromExpr := d.castText(d.quoteIdent("from"))
+	toExpr := d.castText(d.quoteIdent("to"))
+
+	// Build args and WHERE clause using the correct placeholder style.
+	var whereClause string
 	var args []interface{}
 	if search != "" {
-		where = `WHERE subject LIKE @p1 OR from_addr LIKE @p1 OR to_addr LIKE @p1`
-		args = []interface{}{sql.Named("p1", "%"+search+"%")}
+		p := d.placeholder(0)
+		whereClause = fmt.Sprintf(
+			`WHERE subject LIKE %s OR from_addr LIKE %s OR to_addr LIKE %s`,
+			p, p, p,
+		)
+		pattern := "%" + search + "%"
+		switch ldb.driver {
+		case "postgres":
+			// $1 only once — postgres needs distinct placeholders per arg
+			whereClause = fmt.Sprintf(
+				`WHERE subject LIKE %s OR from_addr LIKE %s OR to_addr LIKE %s`,
+				d.placeholder(0), d.placeholder(1), d.placeholder(2),
+			)
+			args = []interface{}{pattern, pattern, pattern}
+		case "mysql":
+			args = []interface{}{pattern, pattern, pattern}
+		default: // sqlserver — named params
+			whereClause = `WHERE subject LIKE @p1 OR from_addr LIKE @p1 OR to_addr LIKE @p1`
+			args = []interface{}{sql.Named("p1", pattern)}
+		}
 	}
 
-	// Count total matching rows.
-	var total int
+	// Count query — wrap in a subquery so the aliased columns are visible to WHERE.
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
-			SELECT id,
-				CAST([from] AS NVARCHAR(MAX)) AS from_addr,
-				CAST([to]   AS NVARCHAR(MAX)) AS to_addr
+			SELECT id, %s AS from_addr, %s AS to_addr, subject
 			FROM queue_watcher_mail
-		) AS t %s`, where)
+		) AS t %s`, fromExpr, toExpr, whereClause)
+
+	var total int
 	if err := ldb.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count mail: %w", err)
 	}
@@ -524,33 +726,84 @@ func (ldb *LaravelDB) QueryMail(search string, page, limit int) (*MailQueryResul
 		totalPages = 1
 	}
 
-	// Fetch the page.
-	pageArgs := append(args,
-		sql.Named("lim", limit),
-		sql.Named("off", offset),
-	)
-	dataQuery := fmt.Sprintf(`
-		SELECT id,
-			ISNULL(message_id,''),
-			ISNULL(subject,''),
-			ISNULL(sent_at,''),
-			CAST([from]     AS NVARCHAR(MAX)),
-			ISNULL(CAST(reply_to AS NVARCHAR(MAX)),''),
-			CAST([to]       AS NVARCHAR(MAX)),
-			ISNULL(CAST(cc  AS NVARCHAR(MAX)),''),
-			ISNULL(CAST(bcc AS NVARCHAR(MAX)),''),
-			ISNULL(body_html,''),
-			ISNULL(body_text,''),
-			CONVERT(VARCHAR(19), created_at, 120)
-		FROM (
-			SELECT *,
-				CAST([from] AS NVARCHAR(MAX)) AS from_addr,
-				CAST([to]   AS NVARCHAR(MAX)) AS to_addr,
-				ROW_NUMBER() OVER (ORDER BY id DESC) AS rn
-			FROM queue_watcher_mail
-		) AS t %s
-		ORDER BY rn
-		OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY`, where)
+	// Data query — paginated list (no body columns).
+	var dataQuery string
+	var pageArgs []interface{}
+
+	coalesceID := d.coalesce("message_id")
+	coalesceSubject := d.coalesce("subject")
+	coalesceSentAt := d.coalesce("sent_at")
+	coalesceReplyTo := d.coalesce(d.castText(d.quoteIdent("reply_to")))
+	coalesceCc := d.coalesce(d.castText(d.quoteIdent("cc")))
+	coalesceBcc := d.coalesce(d.castText(d.quoteIdent("bcc")))
+	fmtCreatedAt := d.fmtTimestamp("created_at")
+
+	switch ldb.driver {
+	case "mysql", "postgres":
+		var searchArgs []interface{}
+		var innerWhere string
+		if search != "" {
+			pattern := "%" + search + "%"
+			if ldb.driver == "postgres" {
+				innerWhere = fmt.Sprintf(
+					`WHERE subject LIKE %s OR %s LIKE %s OR %s LIKE %s`,
+					d.placeholder(0), fromExpr, d.placeholder(1), toExpr, d.placeholder(2),
+				)
+				searchArgs = []interface{}{pattern, pattern, pattern}
+			} else {
+				innerWhere = `WHERE subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ?`
+				searchArgs = []interface{}{pattern, pattern, pattern}
+			}
+		}
+		paginationArgs := []interface{}{}
+		dataQuery = fmt.Sprintf(`
+			SELECT id, %s, %s, %s,
+				%s, %s, %s, %s, %s,
+				%s
+			FROM (
+				SELECT *, %s AS from_addr, %s AS to_addr
+				FROM queue_watcher_mail
+			) AS t %s
+			ORDER BY id DESC %s`,
+			coalesceID, coalesceSubject, coalesceSentAt,
+			fromExpr, coalesceReplyTo, toExpr, coalesceCc, coalesceBcc,
+			fmtCreatedAt,
+			fromExpr, toExpr,
+			innerWhere,
+			d.paginationClause(offset, limit),
+		)
+		pageArgs = append(searchArgs, paginationArgs...)
+
+	default: // sqlserver — ROW_NUMBER + OFFSET/FETCH, named params
+		var innerWhere string
+		if search != "" {
+			innerWhere = `WHERE subject LIKE @p1 OR from_addr LIKE @p1 OR to_addr LIKE @p1`
+			args = []interface{}{sql.Named("p1", "%"+search+"%")}
+		}
+		dataQuery = fmt.Sprintf(`
+			SELECT id, %s, %s, %s,
+				%s, %s, %s, %s, %s,
+				%s
+			FROM (
+				SELECT *,
+					%s AS from_addr,
+					%s AS to_addr,
+					ROW_NUMBER() OVER (ORDER BY id DESC) AS rn
+				FROM queue_watcher_mail
+			) AS t %s
+			ORDER BY rn
+			OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY`,
+			coalesceID, coalesceSubject, coalesceSentAt,
+			fromExpr, coalesceReplyTo, toExpr, coalesceCc, coalesceBcc,
+			fmtCreatedAt,
+			fromExpr, toExpr,
+			innerWhere,
+		)
+		pageArgs = append(args,
+			sql.Named("lim", limit),
+			sql.Named("off", offset),
+		)
+	}
 
 	rows, err := ldb.db.Query(dataQuery, pageArgs...)
 	if err != nil {
@@ -565,7 +818,7 @@ func (ldb *LaravelDB) QueryMail(search string, page, limit int) (*MailQueryResul
 		if err := rows.Scan(
 			&m.ID, &m.MessageID, &m.Subject, &m.SentAt,
 			&fromRaw, &replyToRaw, &toRaw, &ccRaw, &bccRaw,
-			&m.BodyHTML, &m.BodyText, &m.CreatedAt,
+			&m.CreatedAt,
 		); err != nil {
 			continue
 		}
@@ -574,9 +827,6 @@ func (ldb *LaravelDB) QueryMail(search string, page, limit int) (*MailQueryResul
 		m.To = parseMailAddresses(toRaw)
 		m.CC = parseMailAddresses(ccRaw)
 		m.BCC = parseMailAddresses(bccRaw)
-		// Strip body from list view — body is fetched separately per item.
-		m.BodyHTML = ""
-		m.BodyText = ""
 		items = append(items, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -593,23 +843,42 @@ func (ldb *LaravelDB) QueryMail(search string, page, limit int) (*MailQueryResul
 
 // GetMailDetail fetches a single mail item including body content.
 func (ldb *LaravelDB) GetMailDetail(id int64) (*MailItem, error) {
-	query := `
-		SELECT id,
-			ISNULL(message_id,''),
-			ISNULL(subject,''),
-			ISNULL(sent_at,''),
-			CAST([from]     AS NVARCHAR(MAX)),
-			ISNULL(CAST(reply_to AS NVARCHAR(MAX)),''),
-			CAST([to]       AS NVARCHAR(MAX)),
-			ISNULL(CAST(cc  AS NVARCHAR(MAX)),''),
-			ISNULL(CAST(bcc AS NVARCHAR(MAX)),''),
-			ISNULL(body_html,''),
-			ISNULL(body_text,''),
-			CONVERT(VARCHAR(19), created_at, 120)
-		FROM queue_watcher_mail
-		WHERE id = @p1`
+	d := ldb.dialect
+	fromExpr := d.castText(d.quoteIdent("from"))
+	toExpr := d.castText(d.quoteIdent("to"))
+	coalesceID := d.coalesce("message_id")
+	coalesceSubject := d.coalesce("subject")
+	coalesceSentAt := d.coalesce("sent_at")
+	coalesceReplyTo := d.coalesce(d.castText(d.quoteIdent("reply_to")))
+	coalesceCc := d.coalesce(d.castText(d.quoteIdent("cc")))
+	coalesceBcc := d.coalesce(d.castText(d.quoteIdent("bcc")))
+	coalesceHTML := d.coalesce("body_html")
+	coalesceText := d.coalesce("body_text")
+	fmtCreatedAt := d.fmtTimestamp("created_at")
 
-	row := ldb.db.QueryRow(query, sql.Named("p1", id))
+	query := fmt.Sprintf(`
+		SELECT id, %s, %s, %s,
+			%s, %s, %s, %s, %s,
+			%s, %s,
+			%s
+		FROM queue_watcher_mail
+		WHERE id = %s`,
+		coalesceID, coalesceSubject, coalesceSentAt,
+		fromExpr, coalesceReplyTo, toExpr, coalesceCc, coalesceBcc,
+		coalesceHTML, coalesceText,
+		fmtCreatedAt,
+		d.placeholder(0),
+	)
+
+	var arg interface{}
+	switch ldb.driver {
+	case "mysql", "postgres":
+		arg = id
+	default:
+		arg = sql.Named("p1", id)
+	}
+
+	row := ldb.db.QueryRow(query, arg)
 	var m MailItem
 	var fromRaw, replyToRaw, toRaw, ccRaw, bccRaw string
 	if err := row.Scan(

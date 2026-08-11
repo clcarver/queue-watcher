@@ -503,6 +503,15 @@
         <div class="section-divider">
             <h4>🔌 Database Connection</h4>
             <p>Map .env keys to database credentials for queue monitoring.</p>
+            <div style="margin-top:0.5rem;">
+                <label>Database Driver</label>
+                <select id="add-db-driver">
+                    <option value="">Auto-detect from DB_CONNECTION</option>
+                    <option value="sqlserver">SQL Server (sqlsrv)</option>
+                    <option value="mysql">MySQL / MariaDB</option>
+                    <option value="postgres">PostgreSQL</option>
+                </select>
+            </div>
             <button class="btn btn-sm btn-blue" style="margin-top:0.5rem;" onclick="loadEnvKeys('add')">Load .env Keys</button>
             <div class="row-2" style="margin-top:0.4rem;">
                 <div><label>Host Key</label><select id="add-db-host-env"><option value="">— not set —</option></select></div>
@@ -530,6 +539,15 @@
         <div class="section-divider">
             <h4>🔌 Database Connection</h4>
             <button class="btn btn-sm btn-blue" style="margin-top:0.5rem;" onclick="loadEnvKeys('edit')">Reload .env Keys</button>
+            <div style="margin-top:0.5rem;">
+                <label>Database Driver</label>
+                <select id="edit-db-driver">
+                    <option value="">Auto-detect from DB_CONNECTION</option>
+                    <option value="sqlserver">SQL Server (sqlsrv)</option>
+                    <option value="mysql">MySQL / MariaDB</option>
+                    <option value="postgres">PostgreSQL</option>
+                </select>
+            </div>
             <div class="row-2" style="margin-top:0.4rem;">
                 <div><label>Host Key</label><select id="edit-db-host-env"><option value="">— not set —</option></select></div>
                 <div><label>Port Key</label><select id="edit-db-port-env"><option value="">— not set —</option></select></div>
@@ -813,7 +831,8 @@ function updateSiteDetail(site) {
     // DB status inline
     const dbi = document.getElementById('db-status-inline');
     if(site.db_connected) {
-        dbi.innerHTML='🔌 DB: <strong style="color:var(--green)">Connected</strong>';
+        const drv = site.db_driver ? ` <span style="color:var(--text-subtle);font-size:0.7rem;">${esc(site.db_driver)}</span>` : '';
+        dbi.innerHTML=`🔌 DB: <strong style="color:var(--green)">Connected</strong>${drv}`;
     } else if(site.db_error) {
         dbi.innerHTML='🔌 DB: <strong style="color:var(--red)">Error</strong>';
     } else { dbi.innerHTML=''; }
@@ -1076,7 +1095,7 @@ async function validatePath() {
 async function addSite() {
     const path=document.getElementById('add-path').value.trim();
     if(!path){toast('Path is required.','error');return;}
-    const body={path,name:document.getElementById('add-name').value.trim(),worker_count:+document.getElementById('add-workers').value||2,queue_connection:document.getElementById('add-connection').value.trim(),queue_names:document.getElementById('add-queues').value.trim(),git_branch:document.getElementById('add-branch').value.trim(),db_host_env:document.getElementById('add-db-host-env').value,db_port_env:document.getElementById('add-db-port-env').value,db_database_env:document.getElementById('add-db-database-env').value,db_username_env:document.getElementById('add-db-username-env').value,db_password_env:document.getElementById('add-db-password-env').value};
+    const body={path,name:document.getElementById('add-name').value.trim(),worker_count:+document.getElementById('add-workers').value||2,queue_connection:document.getElementById('add-connection').value.trim(),queue_names:document.getElementById('add-queues').value.trim(),git_branch:document.getElementById('add-branch').value.trim(),db_driver:document.getElementById('add-db-driver').value,db_host_env:document.getElementById('add-db-host-env').value,db_port_env:document.getElementById('add-db-port-env').value,db_database_env:document.getElementById('add-db-database-env').value,db_username_env:document.getElementById('add-db-username-env').value,db_password_env:document.getElementById('add-db-password-env').value};
     const r=await fetch('/api/sites/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
     if(d.success){toast(d.message,'success');closeModal('m-add');currentSiteId=d.site_id;loadSites();}else toast('❌ '+d.message,'error',5000);
@@ -1085,11 +1104,12 @@ function openEditSiteModal() {
     const s=allSites.find(x=>x.id===currentSiteId); if(!s) return;
     document.getElementById('edit-name').value=s.name||'';
     document.getElementById('edit-branch').value=s.git_branch||'main';
+    document.getElementById('edit-db-driver').value=s.db_driver_override||'';
     openModal('m-edit');
     loadEnvKeys('edit',s.laravel_path,{host:s.db_host_env||'',port:s.db_port_env||'',database:s.db_database_env||'',username:s.db_username_env||'',password:s.db_password_env||''});
 }
 async function saveEditSite() {
-    const body={id:currentSiteId,name:document.getElementById('edit-name').value.trim(),git_branch:document.getElementById('edit-branch').value.trim(),db_host_env:document.getElementById('edit-db-host-env').value,db_port_env:document.getElementById('edit-db-port-env').value,db_database_env:document.getElementById('edit-db-database-env').value,db_username_env:document.getElementById('edit-db-username-env').value,db_password_env:document.getElementById('edit-db-password-env').value};
+    const body={id:currentSiteId,name:document.getElementById('edit-name').value.trim(),git_branch:document.getElementById('edit-branch').value.trim(),db_driver:document.getElementById('edit-db-driver').value,db_host_env:document.getElementById('edit-db-host-env').value,db_port_env:document.getElementById('edit-db-port-env').value,db_database_env:document.getElementById('edit-db-database-env').value,db_username_env:document.getElementById('edit-db-username-env').value,db_password_env:document.getElementById('edit-db-password-env').value};
     const r=await fetch('/api/sites/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
     if(d.success){toast(d.message,'success');closeModal('m-edit');loadSites();}else toast('❌ '+d.message,'error',5000);
@@ -1108,7 +1128,14 @@ async function loadEnvKeys(prefix, pathOverride, selected) {
         if(!el) return;
         el.innerHTML='<option value="">— not set —</option>'+keys.map(key=>`<option value="${esc(key)}" ${key===sel[k]?'selected':''}>${esc(key)}</option>`).join('');
     });
-    toast(`Loaded ${keys.length} .env keys`);
+    // Auto-set the driver dropdown if not already overridden.
+    const driverEl = document.getElementById(`${prefix}-db-driver`);
+    if(driverEl && d.detected_driver && driverEl.value === '') {
+        driverEl.value = d.detected_driver;
+        toast(`Loaded ${keys.length} .env keys · detected driver: ${d.detected_driver}`);
+    } else {
+        toast(`Loaded ${keys.length} .env keys`);
+    }
 }
 
 // ══════════ TABS ══════════

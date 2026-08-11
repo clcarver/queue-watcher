@@ -31,6 +31,8 @@ type SiteConfig struct {
 
 	// Database connection: names of keys in the site's .env file.
 	// Example: "db_host_env": "PROD_SQL_DB_HOST" → reads PROD_SQL_DB_HOST from .env.
+	// DBDriver overrides auto-detection from DB_CONNECTION; leave blank to auto-detect.
+	DBDriver      string `json:"db_driver,omitempty"`
 	DBHostEnv     string `json:"db_host_env,omitempty"`
 	DBPortEnv     string `json:"db_port_env,omitempty"`
 	DBDatabaseEnv string `json:"db_database_env,omitempty"`

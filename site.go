@@ -129,6 +129,7 @@ func (sm *SiteManager) UpdateSite(id string, updates *SiteConfig) error {
 	}
 
 	// Always apply DB env key mappings (empty string clears the mapping).
+	cfg.DBDriver = updates.DBDriver
 	cfg.DBHostEnv = updates.DBHostEnv
 	cfg.DBPortEnv = updates.DBPortEnv
 	cfg.DBDatabaseEnv = updates.DBDatabaseEnv

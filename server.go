@@ -161,13 +161,15 @@ type SiteStatusData struct {
 	// Live queue metrics from the Laravel database.
 	QueueMetrics *QueueMetrics `json:"queue_metrics,omitempty"`
 	DBConnected  bool          `json:"db_connected"`
+	DBDriver     string        `json:"db_driver,omitempty"` // resolved driver ("sqlserver","mysql","postgres")
 	DBError      string        `json:"db_error,omitempty"`
-	// Configured .env key mappings for DB connection.
-	DBHostEnv     string `json:"db_host_env,omitempty"`
-	DBPortEnv     string `json:"db_port_env,omitempty"`
-	DBDatabaseEnv string `json:"db_database_env,omitempty"`
-	DBUsernameEnv string `json:"db_username_env,omitempty"`
-	DBPasswordEnv string `json:"db_password_env,omitempty"`
+	// Configured .env key mappings and driver override for DB connection.
+	DBDriverOverride string `json:"db_driver_override,omitempty"`
+	DBHostEnv        string `json:"db_host_env,omitempty"`
+	DBPortEnv        string `json:"db_port_env,omitempty"`
+	DBDatabaseEnv    string `json:"db_database_env,omitempty"`
+	DBUsernameEnv    string `json:"db_username_env,omitempty"`
+	DBPasswordEnv    string `json:"db_password_env,omitempty"`
 }
 
 // handleAPISites returns JSON list of all sites with their worker statuses.
@@ -197,6 +199,7 @@ func (ds *DashboardServer) handleAPISiteAdd(w http.ResponseWriter, r *http.Reque
 		QueueConnection string `json:"queue_connection"`
 		QueueNames      string `json:"queue_names"`
 		GitBranch       string `json:"git_branch"`
+		DBDriver        string `json:"db_driver"`
 		DBHostEnv       string `json:"db_host_env"`
 		DBPortEnv       string `json:"db_port_env"`
 		DBDatabaseEnv   string `json:"db_database_env"`
@@ -221,6 +224,7 @@ func (ds *DashboardServer) handleAPISiteAdd(w http.ResponseWriter, r *http.Reque
 		QueueConnection: req.QueueConnection,
 		QueueNames:      req.QueueNames,
 		GitBranch:       req.GitBranch,
+		DBDriver:        req.DBDriver,
 		DBHostEnv:       req.DBHostEnv,
 		DBPortEnv:       req.DBPortEnv,
 		DBDatabaseEnv:   req.DBDatabaseEnv,
@@ -253,6 +257,7 @@ func (ds *DashboardServer) handleAPISiteEdit(w http.ResponseWriter, r *http.Requ
 		ID            string `json:"id"`
 		Name          string `json:"name"`
 		GitBranch     string `json:"git_branch"`
+		DBDriver      string `json:"db_driver"`
 		DBHostEnv     string `json:"db_host_env"`
 		DBPortEnv     string `json:"db_port_env"`
 		DBDatabaseEnv string `json:"db_database_env"`
@@ -273,6 +278,7 @@ func (ds *DashboardServer) handleAPISiteEdit(w http.ResponseWriter, r *http.Requ
 	updates := &SiteConfig{
 		Name:          req.Name,
 		GitBranch:     req.GitBranch,
+		DBDriver:      req.DBDriver,
 		DBHostEnv:     req.DBHostEnv,
 		DBPortEnv:     req.DBPortEnv,
 		DBDatabaseEnv: req.DBDatabaseEnv,
@@ -371,9 +377,12 @@ func (ds *DashboardServer) handleAPISiteEnvKeys(w http.ResponseWriter, r *http.R
 		keys = append(keys, k)
 	}
 
+	detectedDriver := DetectDBDriver(env)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"keys": keys,
+		"keys":            keys,
+		"detected_driver": detectedDriver,
 	})
 }
 
@@ -718,11 +727,17 @@ func (ds *DashboardServer) buildSiteStatus(s *Site) SiteStatusData {
 	}
 
 	// Include the configured .env key mappings.
+	status.DBDriverOverride = s.Config.DBDriver
 	status.DBHostEnv = s.Config.DBHostEnv
 	status.DBPortEnv = s.Config.DBPortEnv
 	status.DBDatabaseEnv = s.Config.DBDatabaseEnv
 	status.DBUsernameEnv = s.Config.DBUsernameEnv
 	status.DBPasswordEnv = s.Config.DBPasswordEnv
+
+	// Include the resolved driver from the active connection.
+	if s.DB != nil {
+		status.DBDriver = s.DB.Driver()
+	}
 
 	return status
 }
