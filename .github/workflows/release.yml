@@ -36,10 +36,21 @@ jobs:
           $ldflags = "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ steps.version.outputs.COMMIT }} -X main.buildDate=${{ steps.version.outputs.DATE }}"
           go build -ldflags $ldflags -o queue-watcher-windows-amd64.exe .
 
+      - name: Generate companion_requires.txt
+        shell: pwsh
+        run: |
+          # Extract CompanionRequires value from updater.go so it stays in sync with the code.
+          $line = Select-String -Path updater.go -Pattern 'CompanionRequires:\s+"([^"]+)"' | Select-Object -First 1
+          $constraint = $line.Matches[0].Groups[1].Value
+          [System.IO.File]::WriteAllText("companion_requires.txt", $constraint)
+          Write-Host "companion_requires.txt: $constraint"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: queue-watcher-windows-amd64.exe
+          files: |
+            queue-watcher-windows-amd64.exe
+            companion_requires.txt
           generate_release_notes: true
           draft: false
           prerelease: false

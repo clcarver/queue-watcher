@@ -281,7 +281,39 @@ func (u *Updater) fetchLatestTag(repository string) (string, error) {
 	return tags[0].Name, nil
 }
 
+// fetchReleaseAssetText downloads a small text asset from a release by name.
+// Returns empty string (no error) if the asset doesn't exist in the release.
+func (u *Updater) fetchReleaseAssetText(release *ghRelease, assetName string) (string, error) {
+	for i := range release.Assets {
+		if release.Assets[i].Name == assetName {
+			req, err := http.NewRequestWithContext(u.ctx, "GET", release.Assets[i].BrowserDownloadURL, nil)
+			if err != nil {
+				return "", err
+			}
+			req.Header.Set("User-Agent", "queue-watcher/"+version)
+
+			resp, err := u.httpClient.Do(req)
+			if err != nil {
+				return "", fmt.Errorf("download asset %q: %w", assetName, err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				return "", fmt.Errorf("asset %q returned status %d", assetName, resp.StatusCode)
+			}
+			b, err := io.ReadAll(io.LimitReader(resp.Body, 512))
+			if err != nil {
+				return "", err
+			}
+			return strings.TrimSpace(string(b)), nil
+		}
+	}
+	return "", nil // asset not present in this release
+}
+
 // PreviewUpdate checks for an update and validates companion repository compatibility.
+// The compatibility check answers: "does the currently-installed companion version
+// satisfy the *target* release's requirements?" — not the running version's.
 func (u *Updater) PreviewUpdate() (*UpdatePreview, error) {
 	release, err := u.fetchLatestRelease()
 	if err != nil {
@@ -314,23 +346,39 @@ func (u *Updater) PreviewUpdate() (*UpdatePreview, error) {
 	}
 
 	preview.CanUpdate = true
-	if u.config.CompanionRepository == "" || u.config.CompanionRequires == "" {
+	if u.config.CompanionRepository == "" {
 		return preview, nil
 	}
 
-	tag, err := u.fetchLatestTag(u.config.CompanionRepository)
+	// Determine what companion version the *target* release requires.
+	// We look for a companion_requires.txt asset in the target release first.
+	// If absent, fall back to this binary's compiled-in requirement.
+	targetRequires := u.config.CompanionRequires
+	if assetRequires, err := u.fetchReleaseAssetText(release, "companion_requires.txt"); err != nil {
+		log.Printf("[updater] Warning: could not fetch companion_requires.txt from release: %v", err)
+	} else if assetRequires != "" {
+		targetRequires = assetRequires
+	}
+
+	if targetRequires == "" {
+		return preview, nil
+	}
+
+	// Fetch the currently-installed companion version (latest tag on its repo).
+	installedTag, err := u.fetchLatestTag(u.config.CompanionRepository)
 	if err != nil {
 		return nil, fmt.Errorf("companion check failed: %w", err)
 	}
-	preview.CompanionTag = tag
+	preview.CompanionTag = installedTag
 
-	if !satisfiesConstraint(normalizeVersion(tag), u.config.CompanionRequires) {
+	if !satisfiesConstraint(normalizeVersion(installedTag), targetRequires) {
 		preview.CanUpdate = false
 		preview.CompatibilityReason = fmt.Sprintf(
-			"blocked: queue-watcher requires %s %s, installed companion is %s",
+			"blocked: queue-watcher %s requires %s %s, but installed companion is %s",
+			release.TagName,
 			u.config.CompanionRepository,
-			u.config.CompanionRequires,
-			tag,
+			targetRequires,
+			installedTag,
 		)
 	}
 
