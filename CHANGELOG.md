@@ -2,6 +2,18 @@
 
 All notable changes to queue-watcher are documented in this file.
 
+## [0.3.2] - 2026-08-11
+
+### Added
+- **MySQL and PostgreSQL database support** — queue monitoring and mail inbox now work with all three Laravel-supported databases.
+- Auto-detection of the database driver from `DB_CONNECTION` in the Laravel `.env` file — no manual configuration needed for standard setups.
+- Driver dropdown in the Add/Edit site modals (`Auto-detect`, SQL Server, MySQL, PostgreSQL); auto-populated when `.env` keys are loaded.
+- DB status badge now shows the resolved driver name alongside the connection status.
+
+### Changed
+- All SQL queries abstracted behind a `dbDialect` interface, handling syntax differences across SQL Server, MySQL, and PostgreSQL (placeholders, `TOP` vs `LIMIT`, `ISNULL` vs `COALESCE`, timestamp formatting, identifier quoting).
+- `/api/sites/env-keys` now returns a `detected_driver` field alongside the key list.
+
 ## [0.3.1] - 2026-08-11
 
 ### Fixed
